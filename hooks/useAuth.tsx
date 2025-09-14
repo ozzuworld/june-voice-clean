@@ -36,7 +36,7 @@ interface AuthContextType extends AuthState {
 const AuthContext = createContext<AuthContextType | null>(null);
 
 // Keycloak configuration
-const KEYCLOAK_URL = 'https://june-idp-359243954.us-central1.run.app';
+const KEYCLOAK_URL = 'https://idp.allsafe.world';
 const REALM = 'june';
 const CLIENT_ID = 'june-mobile-app';
 
@@ -89,14 +89,29 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     error: null,
   });
 
+  // Add debugging for auth state changes
+  useEffect(() => {
+    console.log('🔍 Auth State Changed:', {
+      isAuthenticated: state.isAuthenticated,
+      isLoading: state.isLoading,
+      hasUser: !!state.user,
+      hasAccessToken: !!state.accessToken,
+      error: state.error
+    });
+  }, [state]);
+
   const discovery = useAutoDiscovery(`${KEYCLOAK_URL}/realms/${REALM}`);
 
   const redirectUri = React.useMemo(() => {
     if (Platform.OS === 'web') {
       return 'http://localhost:8081/auth/callback';
     }
-    return makeRedirectUri({ native: 'june://auth/callback' });
+    return makeRedirectUri({ 
+      scheme: undefined // Let Expo handle this automatically
+    });
   }, []);
+
+  console.log('Redirect URI being used:', redirectUri);
 
   const [request, response, promptAsync] = useAuthRequest(
     {
@@ -109,39 +124,241 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     discovery
   );
 
+  // Debug auth request details
   useEffect(() => {
-    checkAuthState();
+    console.log('Auth Request Details:', {
+      clientId: CLIENT_ID,
+      redirectUri,
+      discovery: discovery?.authorizationEndpoint,
+      platform: Platform.OS
+    });
+  }, [redirectUri, discovery]);
+
+  const checkAuthState = useCallback(async () => {
+    try {
+      console.log('🔍 Checking stored auth state...');
+      const storedAuth = await AsyncStorage.getItem(STORAGE_KEYS.AUTH_STATE);
+      const storedUser = await AsyncStorage.getItem(STORAGE_KEYS.USER_INFO);
+      
+      console.log('📱 Stored auth found:', {
+        hasStoredAuth: !!storedAuth,
+        hasStoredUser: !!storedUser
+      });
+      
+      if (storedAuth && storedUser) {
+        const authData = JSON.parse(storedAuth);
+        const userData: User = JSON.parse(storedUser);
+        
+        // Check if access token is still valid
+        const tokenPayload = decodeJWT(authData.access_token);
+        const currentTime = Date.now() / 1000;
+        
+        console.log('⏰ Token validation:', {
+          hasPayload: !!tokenPayload,
+          tokenExp: tokenPayload?.exp,
+          currentTime,
+          isValid: tokenPayload && tokenPayload.exp > currentTime + 60
+        });
+        
+        if (tokenPayload && tokenPayload.exp > currentTime + 60) {
+          console.log('✅ Using stored valid token');
+          setState({
+            isAuthenticated: true,
+            isLoading: false,
+            user: userData,
+            accessToken: authData.access_token,
+            refreshToken: authData.refresh_token,
+            error: null,
+          });
+          return;
+        } else if (authData.refresh_token) {
+          console.log('🔄 Token expired, attempting refresh...');
+          await handleRefreshToken(authData.refresh_token);
+          return;
+        }
+      }
+      
+      console.log('🚫 No valid stored auth, user needs to sign in');
+      setState(prev => ({ ...prev, isLoading: false }));
+    } catch (err) {
+      console.error('💥 Auth check failed:', err);
+      setState(prev => ({ ...prev, isLoading: false }));
+    }
   }, []);
 
   useEffect(() => {
-    if (response?.type === 'success') {
-      handleAuthSuccess(response.params.code);
-    } else if (response?.type === 'error') {
+    checkAuthState();
+  }, [checkAuthState]);
+
+  const handleRefreshToken = async (refreshToken: string) => {
+    try {
+      console.log('🔄 Attempting to refresh token...');
+      const tokenEndpoint = `${KEYCLOAK_URL}/realms/${REALM}/protocol/openid-connect/token`;
+      
+      const refreshRequestBody = {
+        grant_type: 'refresh_token',
+        client_id: CLIENT_ID,
+        refresh_token: refreshToken,
+      };
+
+      const tokenResponse = await fetch(tokenEndpoint, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/x-www-form-urlencoded',
+        },
+        body: new URLSearchParams(refreshRequestBody).toString(),
+      });
+
+      if (!tokenResponse.ok) {
+        throw new Error('Token refresh failed');
+      }
+
+      const tokens = await tokenResponse.json();
+      const tokenPayload = decodeJWT(tokens.access_token);
+      const user = mapKeycloakUser(tokenPayload);
+      
+      await AsyncStorage.setItem(STORAGE_KEYS.AUTH_STATE, JSON.stringify(tokens));
+      await AsyncStorage.setItem(STORAGE_KEYS.USER_INFO, JSON.stringify(user));
+      
+      setState({
+        isAuthenticated: true,
+        isLoading: false,
+        user,
+        accessToken: tokens.access_token,
+        refreshToken: tokens.refresh_token,
+        error: null,
+      });
+      
+      console.log('✅ Token refreshed successfully');
+      
+    } catch (error) {
+      console.error('💥 Token refresh failed:', error);
+      // Clear stored tokens on refresh failure
+      await AsyncStorage.multiRemove([STORAGE_KEYS.AUTH_STATE, STORAGE_KEYS.USER_INFO]);
+      setState({
+        isAuthenticated: false,
+        isLoading: false,
+        user: null,
+        accessToken: null,
+        refreshToken: null,
+        error: 'Session expired. Please sign in again.',
+      });
+    }
+  };
+
+  const handleAuthSuccess = async (code: string) => {
+    try {
+      console.log('🎯 Starting token exchange with code:', code.substring(0, 20) + '...');
+      setState(prev => ({ ...prev, isLoading: true, error: null }));
+
+      const tokenEndpoint = `${KEYCLOAK_URL}/realms/${REALM}/protocol/openid-connect/token`;
+      
+      const tokenRequestBody = {
+        grant_type: 'authorization_code',
+        client_id: CLIENT_ID,
+        code: code,
+        redirect_uri: redirectUri,
+        code_verifier: request?.codeVerifier || '',
+      };
+
+      console.log('🔄 Token exchange request:', {
+        tokenEndpoint,
+        clientId: CLIENT_ID,
+        redirectUri,
+        hasCodeVerifier: !!request?.codeVerifier
+      });
+
+      const tokenResponse = await fetch(tokenEndpoint, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/x-www-form-urlencoded',
+        },
+        body: new URLSearchParams(tokenRequestBody).toString(),
+      });
+
+      console.log('📨 Token response status:', tokenResponse.status);
+
+      if (!tokenResponse.ok) {
+        const errorText = await tokenResponse.text();
+        console.error('❌ Token exchange failed:', errorText);
+        throw new Error(`Token exchange failed: ${errorText}`);
+      }
+
+      const tokens = await tokenResponse.json();
+      console.log('✅ Token exchange successful, received keys:', Object.keys(tokens));
+      
+      // Extract user info from access token
+      const tokenPayload = decodeJWT(tokens.access_token);
+      console.log('🎫 Decoded token payload:', {
+        sub: tokenPayload?.sub,
+        email: tokenPayload?.email,
+        name: tokenPayload?.name,
+        exp: tokenPayload?.exp
+      });
+      
+      if (!tokenPayload) {
+        throw new Error('Failed to decode access token');
+      }
+      
+      const user = mapKeycloakUser(tokenPayload);
+      console.log('👤 Mapped user:', user);
+      
+      // Store auth state
+      await AsyncStorage.setItem(STORAGE_KEYS.AUTH_STATE, JSON.stringify(tokens));
+      await AsyncStorage.setItem(STORAGE_KEYS.USER_INFO, JSON.stringify(user));
+      console.log('💾 Stored auth state in AsyncStorage');
+      
+      setState({
+        isAuthenticated: true,
+        isLoading: false,
+        user,
+        accessToken: tokens.access_token,
+        refreshToken: tokens.refresh_token,
+        error: null,
+      });
+      
+      console.log('🎉 Authentication completed successfully for user:', user.username);
+      
+    } catch (error: any) {
+      console.error('💥 Authentication failed:', error);
       setState(prev => ({
         ...prev,
         isLoading: false,
-        error: response.params?.error_description || 'Authentication failed',
+        error: error?.message || 'Authentication failed',
+      }));
+    }
+  };
+
+  useEffect(() => {
+    console.log('Auth response:', response?.type, response?.params);
+    
+    if (response?.type === 'success') {
+      console.log('Auth success, code:', response.params.code);
+      handleAuthSuccess(response.params.code);
+    } else if (response?.type === 'error') {
+      console.error('Auth error details:', {
+        error: response.error,
+        errorDescription: response.params?.error_description,
+        params: response.params
+      });
+      setState(prev => ({
+        ...prev,
+        isLoading: false,
+        error: response.params?.error_description || response.error?.message || 'Authentication failed',
+      }));
+    } else if (response?.type === 'cancel') {
+      console.log('Auth cancelled');
+      setState(prev => ({
+        ...prev,
+        isLoading: false,
+        error: 'Authentication was cancelled',
       }));
     }
   }, [response]);
 
-  const checkAuthState = useCallback(async () => {
-    try {
-      setState(prev => ({ ...prev, isLoading: false }));
-    } catch (err) {
-      console.error('Auth check failed:', err);
-      setState(prev => ({ ...prev, isLoading: false }));
-    }
-  }, []);
-
-  const handleAuthSuccess = async (code: string) => {
-    setState(prev => ({ ...prev, isLoading: true, error: null }));
-    // Implementation here...
-    setState(prev => ({ ...prev, isLoading: false }));
-  };
-
   const signIn = useCallback(async () => {
     try {
+      console.log('Starting authentication...');
       setState(prev => ({ ...prev, error: null }));
       
       if (!request) {
@@ -156,6 +373,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         showInRecents: false,
       });
     } catch (error: any) {
+      console.error('💥 Sign in failed:', error);
       setState(prev => ({
         ...prev,
         error: error?.message || 'Sign in failed',
@@ -164,18 +382,46 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, [request, promptAsync]);
 
   const signOut = useCallback(async () => {
-    setState({
-      isAuthenticated: false,
-      isLoading: false,
-      user: null,
-      accessToken: null,
-      refreshToken: null,
-      error: null,
-    });
+    try {
+      console.log('🚪 Signing out...');
+      setState(prev => ({ ...prev, isLoading: true }));
+      
+      // Clear local storage
+      await AsyncStorage.multiRemove([STORAGE_KEYS.AUTH_STATE, STORAGE_KEYS.USER_INFO]);
+      
+      setState({
+        isAuthenticated: false,
+        isLoading: false,
+        user: null,
+        accessToken: null,
+        refreshToken: null,
+        error: null,
+      });
+      
+      console.log('✅ Signed out successfully');
+      
+    } catch (error) {
+      console.error('💥 Sign out failed:', error);
+      // Still clear local state even if something fails
+      setState({
+        isAuthenticated: false,
+        isLoading: false,
+        user: null,
+        accessToken: null,
+        refreshToken: null,
+        error: null,
+      });
+    }
   }, []);
 
   const refreshAuth = useCallback(async () => {
-    // Implementation here...
+    const storedAuth = await AsyncStorage.getItem(STORAGE_KEYS.AUTH_STATE);
+    if (storedAuth) {
+      const authData = JSON.parse(storedAuth);
+      if (authData.refresh_token) {
+        await handleRefreshToken(authData.refresh_token);
+      }
+    }
   }, []);
 
   const clearError = useCallback(() => {

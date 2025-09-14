@@ -1,7 +1,7 @@
 // app/(auth)/login.tsx
 import { LinearGradient } from 'expo-linear-gradient';
 import { router } from 'expo-router';
-import React, { useEffect } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   Alert,
   Animated,
@@ -14,16 +14,28 @@ import { Button } from '@/components/ui/Button';
 import { useAuth } from '@/hooks/useAuth';
 
 export default function LoginScreen() {
-  const { signIn, error, clearError, isAuthenticated } = useAuth();
+  const { signIn, error, clearError, isAuthenticated, isLoading } = useAuth();
   const [fadeAnim] = React.useState(new Animated.Value(0));
   const [scaleAnim] = React.useState(new Animated.Value(0.8));
+  const [localLoading, setLocalLoading] = useState(false);
+
+  // Add debugging for login screen
+  useEffect(() => {
+    console.log('🔐 Login screen - auth state:', {
+      isAuthenticated,
+      isLoading,
+      localLoading,
+      error
+    });
+  }, [isAuthenticated, isLoading, localLoading, error]);
 
   // Redirect if already authenticated
   useEffect(() => {
-    if (isAuthenticated) {
+    if (isAuthenticated && !isLoading) {
+      console.log('✅ Login screen - user authenticated, redirecting to chat...');
       router.replace('/(tabs)/chat');
     }
-  }, [isAuthenticated]);
+  }, [isAuthenticated, isLoading]);
 
   useEffect(() => {
     Animated.parallel([
@@ -42,6 +54,8 @@ export default function LoginScreen() {
 
   useEffect(() => {
     if (error) {
+      console.log('❌ Login error:', error);
+      setLocalLoading(false);
       Alert.alert('Authentication Error', error, [
         { text: 'OK', onPress: clearError }
       ]);
@@ -50,13 +64,20 @@ export default function LoginScreen() {
 
   const handleSignIn = async () => {
     try {
-      console.log('Starting authentication...');
+      console.log('🚀 Login button pressed, starting authentication...');
+      setLocalLoading(true);
       await signIn();
     } catch (error) {
-      console.error('Login error:', error);
+      console.error('💥 Login error:', error);
+      setLocalLoading(false);
       Alert.alert('Authentication Error', 'Failed to sign in. Please try again.');
     }
   };
+
+  // Don't render if already authenticated and not loading
+  if (isAuthenticated && !isLoading) {
+    return null;
+  }
 
   return (
     <SafeAreaView style={styles.container}>
@@ -115,6 +136,8 @@ export default function LoginScreen() {
               onPress={handleSignIn}
               style={styles.signInButton}
               textStyle={styles.signInButtonText}
+              loading={localLoading || isLoading}
+              disabled={localLoading || isLoading}
             />
           </View>
 

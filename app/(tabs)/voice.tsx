@@ -8,7 +8,7 @@ import {
   TouchableOpacity,
 } from 'react-native';
 
-import { ThemedText } from '@/components/Themed';
+import { ThemedText } from '@/components/ThemedText';
 import { ThemedView } from '@/components/ThemedView';
 import { VoiceCircle } from '@/components/VoiceCircle';
 import { Colors } from '@/constants/Colors';

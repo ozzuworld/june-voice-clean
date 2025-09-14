@@ -1,8 +1,9 @@
-// hooks/useVoice.tsx
+// hooks/useVoice.tsx - FIXED VERSION
 import React, { createContext, useCallback, useContext, useState, useRef } from 'react';
 import { Audio } from 'expo-av';
 import { useAuth } from './useAuth';
 import * as FileSystem from 'expo-file-system';
+import { Platform } from 'react-native';
 
 interface VoiceState {
   isListening: boolean;
@@ -88,11 +89,14 @@ export function VoiceProvider({ children }: { children: React.ReactNode }) {
         throw new Error('Microphone permission denied');
       }
 
-      // Android-only audio configuration
+      // FIXED: Cross-platform audio configuration
       await Audio.setAudioModeAsync({
+        allowsRecordingIOS: true,
+        playsInSilentModeIOS: true,
         shouldDuckAndroid: true,
-        interruptionModeAndroid: Audio.INTERRUPTION_MODE_ANDROID_DO_NOT_MIX,
         playThroughEarpieceAndroid: false,
+        staysActiveInBackground: false,
+        // Removed: interruptionModeAndroid (was causing the error)
       });
 
       setState(prev => ({ 
@@ -103,15 +107,30 @@ export function VoiceProvider({ children }: { children: React.ReactNode }) {
         aiResponse: '',
       }));
 
-      // Android-only recording options
-      const recordingOptions = {
+      // FIXED: Cross-platform recording options
+      const recordingOptions: Audio.RecordingOptions = {
         android: {
-          extension: '.wav',
-          outputFormat: Audio.RECORDING_OPTION_ANDROID_OUTPUT_FORMAT_DEFAULT,
-          audioEncoder: Audio.RECORDING_OPTION_ANDROID_AUDIO_ENCODER_DEFAULT,
+          extension: '.m4a',
+          outputFormat: Audio.AndroidOutputFormat.MPEG_4,
+          audioEncoder: Audio.AndroidAudioEncoder.AAC,
           sampleRate: 16000,
           numberOfChannels: 1,
           bitRate: 128000,
+        },
+        ios: {
+          extension: '.m4a',
+          outputFormat: Audio.IOSOutputFormat.MPEG4AAC,
+          audioQuality: Audio.IOSAudioQuality.HIGH,
+          sampleRate: 16000,
+          numberOfChannels: 1,
+          bitRate: 128000,
+          linearPCMBitDepth: 16,
+          linearPCMIsBigEndian: false,
+          linearPCMIsFloat: false,
+        },
+        web: {
+          mimeType: 'audio/webm;codecs=opus',
+          bitsPerSecond: 128000,
         },
       };
       
@@ -172,78 +191,104 @@ export function VoiceProvider({ children }: { children: React.ReactNode }) {
         throw new Error('Audio file is empty or does not exist');
       }
 
-      const audioData = await FileSystem.readAsStringAsync(uri, {
-        encoding: FileSystem.EncodingType.Base64,
-      });
+      // FIXED: Better error handling for file operations
+      let audioData: string;
+      try {
+        audioData = await FileSystem.readAsStringAsync(uri, {
+          encoding: FileSystem.EncodingType.Base64,
+        });
+      } catch (fileError: any) {
+        throw new Error(`Failed to read audio file: ${fileError.message}`);
+      }
 
-      console.log('💬 Sending audio to orchestrator...');
+      console.log('📤 Sending audio to orchestrator...', `${audioData.length} base64 chars`);
 
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), 60000);
 
-      const response = await fetch(`${ORCHESTRATOR_URL}/v1/process-audio`, {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${accessToken}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          audio_data: audioData
-        }),
-        signal: controller.signal,
-      });
+      try {
+        const response = await fetch(`${ORCHESTRATOR_URL}/v1/process-audio`, {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${accessToken}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            audio_data: audioData
+          }),
+          signal: controller.signal,
+        });
 
-      clearTimeout(timeoutId);
+        clearTimeout(timeoutId);
 
-      if (!response.ok) {
-        const errorText = await response.text();
-        throw new Error(`Audio processing failed: ${response.status} ${errorText}`);
-      }
-
-      const data = await response.json();
-      console.log('✅ Audio processing response:', data);
-
-      setState(prev => ({
-        ...prev,
-        isProcessing: false,
-        transcription: data.transcription || 'Could not transcribe audio',
-        aiResponse: data.response_text || 'No response generated',
-      }));
-
-      if (data.response_audio) {
-        console.log('🔊 Playing audio response...');
-        setState(prev => ({ ...prev, isPlaying: true }));
-        
-        try {
-          const audioUri = `${FileSystem.documentDirectory}response_audio_${Date.now()}.mp3`;
-          await FileSystem.writeAsStringAsync(audioUri, data.response_audio, {
-            encoding: FileSystem.EncodingType.Base64,
-          });
-
-          const { sound: newSound } = await Audio.Sound.createAsync(
-            { uri: audioUri },
-            { shouldPlay: true, volume: 1.0 }
-          );
-
-          soundRef.current = newSound;
-
-          newSound.setOnPlaybackStatusUpdate((status) => {
-            if (status.isLoaded && status.didJustFinish) {
-              setState(prev => ({ ...prev, isPlaying: false }));
-              newSound.unloadAsync().then(() => {
-                soundRef.current = null;
-                FileSystem.deleteAsync(audioUri, { idempotent: true });
-              });
-            }
-          });
-
-        } catch (audioError) {
-          console.error('💥 Audio playback failed:', audioError);
-          setState(prev => ({ ...prev, isPlaying: false }));
+        if (!response.ok) {
+          const errorText = await response.text();
+          throw new Error(`Audio processing failed: ${response.status} ${errorText}`);
         }
+
+        const data = await response.json();
+        console.log('✅ Audio processing response:', data);
+
+        setState(prev => ({
+          ...prev,
+          isProcessing: false,
+          transcription: data.transcription || 'Could not transcribe audio',
+          aiResponse: data.response_text || 'No response generated',
+        }));
+
+        // FIXED: Better audio playback handling
+        if (data.response_audio) {
+          console.log('🔊 Playing audio response...');
+          setState(prev => ({ ...prev, isPlaying: true }));
+          
+          try {
+            const audioUri = `${FileSystem.documentDirectory}response_audio_${Date.now()}.mp3`;
+            await FileSystem.writeAsStringAsync(audioUri, data.response_audio, {
+              encoding: FileSystem.EncodingType.Base64,
+            });
+
+            const { sound: newSound } = await Audio.Sound.createAsync(
+              { uri: audioUri },
+              { 
+                shouldPlay: true, 
+                volume: 1.0,
+                rate: 1.0,
+                shouldCorrectPitch: true,
+              }
+            );
+
+            soundRef.current = newSound;
+
+            newSound.setOnPlaybackStatusUpdate((status) => {
+              if (status.isLoaded && status.didJustFinish) {
+                setState(prev => ({ ...prev, isPlaying: false }));
+                newSound.unloadAsync().then(() => {
+                  soundRef.current = null;
+                  FileSystem.deleteAsync(audioUri, { idempotent: true }).catch(console.log);
+                });
+              }
+            });
+
+          } catch (audioError: any) {
+            console.error('💥 Audio playback failed:', audioError);
+            setState(prev => ({ ...prev, isPlaying: false }));
+          }
+        }
+
+      } catch (networkError: any) {
+        clearTimeout(timeoutId);
+        if (networkError.name === 'AbortError') {
+          throw new Error('Request timed out after 60 seconds');
+        }
+        throw networkError;
       }
 
-      await FileSystem.deleteAsync(uri, { idempotent: true });
+      // Clean up recorded file
+      try {
+        await FileSystem.deleteAsync(uri, { idempotent: true });
+      } catch (deleteError) {
+        console.log('Could not delete temp file (ignored):', deleteError);
+      }
 
     } catch (error: any) {
       console.error('💥 Voice processing error:', error);

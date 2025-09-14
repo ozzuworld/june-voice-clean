@@ -1,4 +1,4 @@
-// hooks/useChat.tsx
+// hooks/useChat.tsx - FIXED VERSION
 import React, { createContext, useCallback, useContext, useState } from 'react';
 import { useAuth } from './useAuth';
 
@@ -42,12 +42,18 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
       return;
     }
 
+    const trimmedText = text.trim();
+    if (!trimmedText) {
+      setState(prev => ({ ...prev, error: 'Message cannot be empty' }));
+      return;
+    }
+
     const userMessage: Message = {
       id: Date.now().toString(),
-      text: text.trim(),
+      text: trimmedText,
       isUser: true,
       timestamp: new Date(),
-      status: 'sent',
+      status: 'sending',
     };
 
     // Add user message immediately
@@ -59,8 +65,12 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
     }));
 
     try {
-      console.log('💬 Sending message to orchestrator:', text);
+      console.log('💬 Sending message to orchestrator:', trimmedText);
       
+      // FIXED: Better request configuration with timeout
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 30000); // 30 second timeout
+
       const response = await fetch(`${ORCHESTRATOR_URL}/v1/chat`, {
         method: 'POST',
         headers: {
@@ -68,11 +78,12 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          user_input: text
+          user_input: trimmedText
         }),
-        timeout: 30000,
+        signal: controller.signal,
       });
 
+      clearTimeout(timeoutId);
       console.log('📨 Chat response status:', response.status);
 
       if (!response.ok) {
@@ -84,6 +95,12 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
       const data = await response.json();
       console.log('✅ Chat response received:', data);
 
+      // Mark user message as sent
+      const sentUserMessage: Message = {
+        ...userMessage,
+        status: 'sent',
+      };
+
       const botMessage: Message = {
         id: (Date.now() + 1).toString(),
         text: data.reply || 'Sorry, I couldn\'t process your message.',
@@ -92,18 +109,33 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
         status: 'sent',
       };
 
+      // FIXED: Update messages with both sent user message and bot response
       setState(prev => ({
         ...prev,
-        messages: [...prev.messages, botMessage],
+        messages: [...prev.messages.slice(0, -1), sentUserMessage, botMessage],
         isLoading: false,
       }));
 
     } catch (error: any) {
       console.error('💥 Chat error:', error);
       
-      const errorMessage: Message = {
+      // FIXED: Handle different error types
+      let errorMessage = 'Failed to send message';
+      if (error.name === 'AbortError') {
+        errorMessage = 'Request timed out. Please try again.';
+      } else if (error.message) {
+        errorMessage = error.message;
+      }
+
+      // Mark user message as error
+      const errorUserMessage: Message = {
+        ...userMessage,
+        status: 'error',
+      };
+
+      const errorBotMessage: Message = {
         id: (Date.now() + 1).toString(),
-        text: `Sorry, I encountered an error: ${error.message}`,
+        text: `Sorry, I encountered an error: ${errorMessage}`,
         isUser: false,
         timestamp: new Date(),
         status: 'error',
@@ -111,9 +143,9 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
 
       setState(prev => ({
         ...prev,
-        messages: [...prev.messages, errorMessage],
+        messages: [...prev.messages.slice(0, -1), errorUserMessage, errorBotMessage],
         isLoading: false,
-        error: error.message,
+        error: errorMessage,
       }));
     }
   }, [accessToken]);
@@ -143,7 +175,8 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
 export function useChat(): ChatContextType {
   const context = useContext(ChatContext);
   if (!context) {
-    throw new error('useChat must be used within a ChatProvider');
+    // FIXED: Error constructor with capital E
+    throw new Error('useChat must be used within a ChatProvider');
   }
   return context;
 }

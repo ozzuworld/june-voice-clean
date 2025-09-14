@@ -1,10 +1,11 @@
-// hooks/useAuth.tsx
+// hooks/useAuth.tsx - COMPLETE FIXED VERSION with centralized config
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Buffer } from 'buffer';
 import { makeRedirectUri, useAuthRequest, useAutoDiscovery } from 'expo-auth-session';
 import * as WebBrowser from 'expo-web-browser';
 import React, { createContext, useCallback, useContext, useEffect, useState } from 'react';
 import { Platform } from 'react-native';
+import APP_CONFIG from '@/config/app.config';
 
 WebBrowser.maybeCompleteAuthSession();
 
@@ -35,10 +36,8 @@ interface AuthContextType extends AuthState {
 
 const AuthContext = createContext<AuthContextType | null>(null);
 
-// Keycloak configuration
-const KEYCLOAK_URL = 'https://idp.allsafe.world';
-const REALM = 'june';
-const CLIENT_ID = 'june-mobile-app';
+// FIXED: Use centralized configuration
+const { KEYCLOAK_URL, KEYCLOAK, REDIRECT_SCHEME } = APP_CONFIG;
 
 // Storage keys
 const STORAGE_KEYS = {
@@ -74,7 +73,7 @@ function mapKeycloakUser(tokenPayload: any): User {
     id: tokenPayload.sub,
     email: tokenPayload.email,
     username: tokenPayload.preferred_username,
-    name: tokenPayload.name,
+    name: tokenPayload.name || tokenPayload.preferred_username,
     roles: tokenPayload.realm_access?.roles || [],
   };
 }
@@ -100,14 +99,17 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     });
   }, [state]);
 
-  const discovery = useAutoDiscovery(`${KEYCLOAK_URL}/realms/${REALM}`);
+  const discovery = useAutoDiscovery(`${KEYCLOAK_URL}/realms/${KEYCLOAK.REALM}`);
 
+  // FIXED: Better redirect URI handling
   const redirectUri = React.useMemo(() => {
     if (Platform.OS === 'web') {
       return 'http://localhost:8081/auth/callback';
     }
+    // Use the scheme from centralized config
     return makeRedirectUri({ 
-      scheme: undefined // Let Expo handle this automatically
+      scheme: REDIRECT_SCHEME,
+      path: 'auth/callback'
     });
   }, []);
 
@@ -115,7 +117,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const [request, response, promptAsync] = useAuthRequest(
     {
-      clientId: CLIENT_ID,
+      clientId: KEYCLOAK.CLIENT_ID,
       scopes: ['openid', 'profile', 'email', 'offline_access'],
       redirectUri,
       responseType: 'code',
@@ -127,10 +129,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   // Debug auth request details
   useEffect(() => {
     console.log('Auth Request Details:', {
-      clientId: CLIENT_ID,
+      clientId: KEYCLOAK.CLIENT_ID,
       redirectUri,
       discovery: discovery?.authorizationEndpoint,
-      platform: Platform.OS
+      platform: Platform.OS,
+      keycloakUrl: KEYCLOAK_URL
     });
   }, [redirectUri, discovery]);
 
@@ -193,11 +196,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const handleRefreshToken = async (refreshToken: string) => {
     try {
       console.log('🔄 Attempting to refresh token...');
-      const tokenEndpoint = `${KEYCLOAK_URL}/realms/${REALM}/protocol/openid-connect/token`;
+      const tokenEndpoint = `${KEYCLOAK_URL}/realms/${KEYCLOAK.REALM}/protocol/openid-connect/token`;
       
       const refreshRequestBody = {
         grant_type: 'refresh_token',
-        client_id: CLIENT_ID,
+        client_id: KEYCLOAK.CLIENT_ID,
         refresh_token: refreshToken,
       };
 
@@ -251,11 +254,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       console.log('🎯 Starting token exchange with code:', code.substring(0, 20) + '...');
       setState(prev => ({ ...prev, isLoading: true, error: null }));
 
-      const tokenEndpoint = `${KEYCLOAK_URL}/realms/${REALM}/protocol/openid-connect/token`;
+      const tokenEndpoint = `${KEYCLOAK_URL}/realms/${KEYCLOAK.REALM}/protocol/openid-connect/token`;
       
       const tokenRequestBody = {
         grant_type: 'authorization_code',
-        client_id: CLIENT_ID,
+        client_id: KEYCLOAK.CLIENT_ID,
         code: code,
         redirect_uri: redirectUri,
         code_verifier: request?.codeVerifier || '',
@@ -263,12 +266,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
       console.log('🔄 Token exchange request:', {
         tokenEndpoint,
-        clientId: CLIENT_ID,
+        clientId: KEYCLOAK.CLIENT_ID,
         redirectUri,
         hasCodeVerifier: !!request?.codeVerifier
       });
 
-      const tokenResponse = await fetch(tokenEndpoint, {
+      const response = await fetch(tokenEndpoint, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/x-www-form-urlencoded',
@@ -276,15 +279,15 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         body: new URLSearchParams(tokenRequestBody).toString(),
       });
 
-      console.log('📨 Token response status:', tokenResponse.status);
+      console.log('📨 Token response status:', response.status);
 
-      if (!tokenResponse.ok) {
-        const errorText = await tokenResponse.text();
+      if (!response.ok) {
+        const errorText = await response.text();
         console.error('❌ Token exchange failed:', errorText);
         throw new Error(`Token exchange failed: ${errorText}`);
       }
 
-      const tokens = await tokenResponse.json();
+      const tokens = await response.json();
       console.log('✅ Token exchange successful, received keys:', Object.keys(tokens));
       
       // Extract user info from access token
@@ -358,7 +361,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const signIn = useCallback(async () => {
     try {
-      console.log('Starting authentication...');
+      console.log('🚀 Starting authentication...');
       setState(prev => ({ ...prev, error: null }));
       
       if (!request) {
@@ -369,6 +372,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         return;
       }
 
+      console.log('🔑 Prompting for authentication...');
       await promptAsync({
         showInRecents: false,
       });
@@ -385,6 +389,30 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     try {
       console.log('🚪 Signing out...');
       setState(prev => ({ ...prev, isLoading: true }));
+      
+      const storedAuth = await AsyncStorage.getItem(STORAGE_KEYS.AUTH_STATE);
+      if (storedAuth) {
+        const authData = JSON.parse(storedAuth);
+        
+        // Optional: Logout from Keycloak server
+        try {
+          const logoutEndpoint = `${KEYCLOAK_URL}/realms/${KEYCLOAK.REALM}/protocol/openid-connect/logout`;
+          const logoutRequestBody = {
+            client_id: KEYCLOAK.CLIENT_ID,
+            refresh_token: authData.refresh_token,
+          };
+          
+          await fetch(logoutEndpoint, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/x-www-form-urlencoded',
+            },
+            body: new URLSearchParams(logoutRequestBody).toString(),
+          });
+        } catch (logoutError) {
+          console.log('Server logout failed (ignored):', logoutError);
+        }
+      }
       
       // Clear local storage
       await AsyncStorage.multiRemove([STORAGE_KEYS.AUTH_STATE, STORAGE_KEYS.USER_INFO]);

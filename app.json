@@ -43,7 +43,11 @@
         {
           "action": "VIEW",
           "autoVerify": true,
-          "data": [{"scheme": "june"}],
+          "data": [
+            {
+              "scheme": "june"
+            }
+          ],
           "category": ["BROWSABLE", "DEFAULT"]
         }
       ]

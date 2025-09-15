@@ -1,4 +1,4 @@
-// hooks/useVoice.tsx - FIXED VERSION
+// hooks/useVoice.tsx - QUICK FIX for STT 500 errors
 import React, { createContext, useCallback, useContext, useState, useRef } from 'react';
 import { Audio } from 'expo-av';
 import { useAuth } from './useAuth';
@@ -80,7 +80,7 @@ export function VoiceProvider({ children }: { children: React.ReactNode }) {
     }
 
     try {
-      console.log('🎤 Starting real voice recording...');
+      console.log('🎤 Starting voice recording...');
       
       await cleanup();
 
@@ -96,7 +96,6 @@ export function VoiceProvider({ children }: { children: React.ReactNode }) {
         shouldDuckAndroid: true,
         playThroughEarpieceAndroid: false,
         staysActiveInBackground: false,
-        // Removed: interruptionModeAndroid (was causing the error)
       });
 
       setState(prev => ({ 
@@ -191,7 +190,7 @@ export function VoiceProvider({ children }: { children: React.ReactNode }) {
         throw new Error('Audio file is empty or does not exist');
       }
 
-      // FIXED: Better error handling for file operations
+      // Read audio file as base64
       let audioData: string;
       try {
         audioData = await FileSystem.readAsStringAsync(uri, {
@@ -228,6 +227,11 @@ export function VoiceProvider({ children }: { children: React.ReactNode }) {
 
         const data = await response.json();
         console.log('✅ Audio processing response:', data);
+
+        // FIXED: Handle error responses from orchestrator
+        if (data.error) {
+          throw new Error(data.error);
+        }
 
         setState(prev => ({
           ...prev,
@@ -292,11 +296,30 @@ export function VoiceProvider({ children }: { children: React.ReactNode }) {
 
     } catch (error: any) {
       console.error('💥 Voice processing error:', error);
+      
+      // FIXED: Better error handling with user-friendly messages
+      let errorMessage = 'Voice processing failed';
+      
+      if (error.message.includes('500')) {
+        errorMessage = 'Speech service temporarily unavailable. Please try again.';
+      } else if (error.message.includes('network')) {
+        errorMessage = 'Network error. Please check your connection.';
+      } else if (error.message.includes('timeout')) {
+        errorMessage = 'Request timed out. Please try a shorter recording.';
+      } else if (error.message.includes('permission')) {
+        errorMessage = 'Microphone permission required. Please enable in settings.';
+      } else if (error.message) {
+        errorMessage = error.message;
+      }
+      
       setState(prev => ({
         ...prev,
         isListening: false,
         isProcessing: false,
-        error: error.message,
+        error: errorMessage,
+        // FIXED: Show fallback transcription and response on error
+        transcription: 'Could not transcribe audio due to service error.',
+        aiResponse: 'I apologize, but I encountered an error processing your voice message. Please try again or type your message instead.',
       }));
     } finally {
       isProcessingRef.current = false;

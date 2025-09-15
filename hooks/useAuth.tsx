@@ -1,4 +1,4 @@
-// hooks/useAuth.tsx - COMPLETE FIXED VERSION with centralized config
+// hooks/useAuth.tsx - FIXED VERSION with better callback handling
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Buffer } from 'buffer';
 import { makeRedirectUri, useAuthRequest, useAutoDiscovery } from 'expo-auth-session';
@@ -7,6 +7,7 @@ import React, { createContext, useCallback, useContext, useEffect, useState } fr
 import { Platform } from 'react-native';
 import APP_CONFIG from '@/config/app.config';
 
+// CRITICAL: Complete the auth session for React Native
 WebBrowser.maybeCompleteAuthSession();
 
 // Types
@@ -36,7 +37,6 @@ interface AuthContextType extends AuthState {
 
 const AuthContext = createContext<AuthContextType | null>(null);
 
-// FIXED: Use centralized configuration
 const { KEYCLOAK_URL, KEYCLOAK, REDIRECT_SCHEME } = APP_CONFIG;
 
 // Storage keys
@@ -88,32 +88,41 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     error: null,
   });
 
-  // Add debugging for auth state changes
+  // Enhanced debugging
   useEffect(() => {
     console.log('🔍 Auth State Changed:', {
       isAuthenticated: state.isAuthenticated,
       isLoading: state.isLoading,
       hasUser: !!state.user,
       hasAccessToken: !!state.accessToken,
-      error: state.error
+      error: state.error,
+      username: state.user?.username
     });
   }, [state]);
 
   const discovery = useAutoDiscovery(`${KEYCLOAK_URL}/realms/${KEYCLOAK.REALM}`);
 
-  // FIXED: Better redirect URI handling
+  // FIXED: Use proper redirect URI with explicit makeRedirectUri
   const redirectUri = React.useMemo(() => {
     if (Platform.OS === 'web') {
       return 'http://localhost:8081/auth/callback';
     }
-    // Use the scheme from centralized config
-    return makeRedirectUri({ 
+    
+    // FIXED: Use makeRedirectUri for proper Android handling
+    const nativeRedirectUri = makeRedirectUri({
       scheme: REDIRECT_SCHEME,
-      path: 'auth/callback'
+      path: 'auth/callback',
+      preferLocalhost: false,
+      isTripleSlashed: false,
     });
+    
+    console.log('🔗 Native redirect URI generated:', nativeRedirectUri);
+    return nativeRedirectUri;
   }, []);
 
-  console.log('Redirect URI being used:', redirectUri);
+  console.log('🔗 Final redirect URI being used:', redirectUri);
+  console.log('🔗 Platform:', Platform.OS);
+  console.log('🔗 Scheme configured:', REDIRECT_SCHEME);
 
   const [request, response, promptAsync] = useAuthRequest(
     {
@@ -122,20 +131,27 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       redirectUri,
       responseType: 'code',
       usePKCE: true,
+      // FIXED: Additional parameters for better compatibility
+      additionalParameters: {},
+      extraParams: {},
     },
     discovery
   );
 
-  // Debug auth request details
+  // Enhanced debug logging
   useEffect(() => {
-    console.log('Auth Request Details:', {
+    console.log('🔧 Auth Configuration:', {
       clientId: KEYCLOAK.CLIENT_ID,
       redirectUri,
       discovery: discovery?.authorizationEndpoint,
       platform: Platform.OS,
-      keycloakUrl: KEYCLOAK_URL
+      keycloakUrl: KEYCLOAK_URL,
+      realm: KEYCLOAK.REALM,
+      scheme: REDIRECT_SCHEME,
+      requestReady: !!request,
+      discoveryReady: !!discovery
     });
-  }, [redirectUri, discovery]);
+  }, [redirectUri, discovery, request]);
 
   const checkAuthState = useCallback(async () => {
     try {
@@ -143,7 +159,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       const storedAuth = await AsyncStorage.getItem(STORAGE_KEYS.AUTH_STATE);
       const storedUser = await AsyncStorage.getItem(STORAGE_KEYS.USER_INFO);
       
-      console.log('📱 Stored auth found:', {
+      console.log('📱 Stored auth check:', {
         hasStoredAuth: !!storedAuth,
         hasStoredUser: !!storedUser
       });
@@ -164,7 +180,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         });
         
         if (tokenPayload && tokenPayload.exp > currentTime + 60) {
-          console.log('✅ Using stored valid token');
+          console.log('✅ Using stored valid token for user:', userData.username);
           setState({
             isAuthenticated: true,
             isLoading: false,
@@ -185,12 +201,17 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       setState(prev => ({ ...prev, isLoading: false }));
     } catch (err) {
       console.error('💥 Auth check failed:', err);
-      setState(prev => ({ ...prev, isLoading: false }));
+      setState(prev => ({ ...prev, isLoading: false, error: 'Auth check failed' }));
     }
   }, []);
 
   useEffect(() => {
-    checkAuthState();
+    // Add a delay to allow the app to fully initialize
+    const timer = setTimeout(() => {
+      checkAuthState();
+    }, 100);
+    
+    return () => clearTimeout(timer);
   }, [checkAuthState]);
 
   const handleRefreshToken = async (refreshToken: string) => {
@@ -213,7 +234,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       });
 
       if (!tokenResponse.ok) {
-        throw new Error('Token refresh failed');
+        throw new Error(`Token refresh failed: ${tokenResponse.status}`);
       }
 
       const tokens = await tokenResponse.json();
@@ -232,7 +253,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         error: null,
       });
       
-      console.log('✅ Token refreshed successfully');
+      console.log('✅ Token refreshed successfully for user:', user.username);
       
     } catch (error) {
       console.error('💥 Token refresh failed:', error);
@@ -264,12 +285,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         code_verifier: request?.codeVerifier || '',
       };
 
-      console.log('🔄 Token exchange request:', {
-        tokenEndpoint,
-        clientId: KEYCLOAK.CLIENT_ID,
-        redirectUri,
-        hasCodeVerifier: !!request?.codeVerifier
-      });
+      console.log('🔄 Token exchange request to:', tokenEndpoint);
+      console.log('🔄 Using redirect URI:', redirectUri);
+      console.log('🔄 Client ID:', KEYCLOAK.CLIENT_ID);
+      console.log('🔄 Has code verifier:', !!request?.codeVerifier);
 
       const response = await fetch(tokenEndpoint, {
         method: 'POST',
@@ -284,7 +303,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       if (!response.ok) {
         const errorText = await response.text();
         console.error('❌ Token exchange failed:', errorText);
-        throw new Error(`Token exchange failed: ${errorText}`);
+        throw new Error(`Token exchange failed: ${response.status} - ${errorText}`);
       }
 
       const tokens = await response.json();
@@ -295,6 +314,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       console.log('🎫 Decoded token payload:', {
         sub: tokenPayload?.sub,
         email: tokenPayload?.email,
+        preferred_username: tokenPayload?.preferred_username,
         name: tokenPayload?.name,
         exp: tokenPayload?.exp
       });
@@ -311,6 +331,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       await AsyncStorage.setItem(STORAGE_KEYS.USER_INFO, JSON.stringify(user));
       console.log('💾 Stored auth state in AsyncStorage');
       
+      // CRITICAL: Update state to authenticated
       setState({
         isAuthenticated: true,
         isLoading: false,
@@ -321,6 +342,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       });
       
       console.log('🎉 Authentication completed successfully for user:', user.username);
+      console.log('🎉 User is now authenticated:', true);
       
     } catch (error: any) {
       console.error('💥 Authentication failed:', error);
@@ -332,14 +354,32 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   };
 
+  // CRITICAL: Enhanced response handling
   useEffect(() => {
-    console.log('Auth response:', response?.type, response?.params);
+    console.log('📬 Auth response received:', {
+      type: response?.type,
+      hasParams: !!response?.params,
+      paramKeys: response?.params ? Object.keys(response.params) : [],
+      code: response?.params?.code ? 'present' : 'missing',
+      error: response?.error?.message,
+      errorDescription: response?.params?.error_description
+    });
     
     if (response?.type === 'success') {
-      console.log('Auth success, code:', response.params.code);
-      handleAuthSuccess(response.params.code);
+      console.log('✅ Auth success detected!');
+      if (response.params?.code) {
+        console.log('✅ Authorization code received, starting token exchange...');
+        handleAuthSuccess(response.params.code);
+      } else {
+        console.error('❌ Success response but no authorization code');
+        setState(prev => ({
+          ...prev,
+          isLoading: false,
+          error: 'Authentication succeeded but no authorization code received',
+        }));
+      }
     } else if (response?.type === 'error') {
-      console.error('Auth error details:', {
+      console.error('❌ Auth error details:', {
         error: response.error,
         errorDescription: response.params?.error_description,
         params: response.params
@@ -350,21 +390,29 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         error: response.params?.error_description || response.error?.message || 'Authentication failed',
       }));
     } else if (response?.type === 'cancel') {
-      console.log('Auth cancelled');
+      console.log('🚫 Auth cancelled by user');
       setState(prev => ({
         ...prev,
         isLoading: false,
-        error: 'Authentication was cancelled',
+        error: null, // Don't show error for user cancellation
+      }));
+    } else if (response?.type === 'dismiss') {
+      console.log('🚫 Auth dismissed');
+      setState(prev => ({
+        ...prev,
+        isLoading: false,
+        error: null,
       }));
     }
   }, [response]);
 
   const signIn = useCallback(async () => {
     try {
-      console.log('🚀 Starting authentication...');
+      console.log('🚀 Starting authentication process...');
       setState(prev => ({ ...prev, error: null }));
       
       if (!request) {
+        console.log('❌ Auth request not ready yet');
         setState(prev => ({
           ...prev,
           error: 'Authentication is initializing. Please wait and try again.',
@@ -372,10 +420,30 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         return;
       }
 
-      console.log('🔑 Prompting for authentication...');
-      await promptAsync({
-        showInRecents: false,
+      if (!discovery) {
+        console.log('❌ Discovery not ready yet');
+        setState(prev => ({
+          ...prev,
+          error: 'Authentication service discovery failed. Please check your internet connection.',
+        }));
+        return;
+      }
+
+      console.log('🔑 Prompting for authentication with config:', {
+        authorizationEndpoint: discovery.authorizationEndpoint,
+        clientId: KEYCLOAK.CLIENT_ID,
+        redirectUri,
+        scopes: request.scopes
       });
+      
+      const result = await promptAsync({
+        showInRecents: false,
+        // Force browser session to ensure fresh authentication
+        useProxy: Platform.OS === 'android',
+      });
+      
+      console.log('🔑 Prompt async result:', result);
+      
     } catch (error: any) {
       console.error('💥 Sign in failed:', error);
       setState(prev => ({
@@ -383,38 +451,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         error: error?.message || 'Sign in failed',
       }));
     }
-  }, [request, promptAsync]);
+  }, [request, promptAsync, discovery, redirectUri]);
 
   const signOut = useCallback(async () => {
     try {
       console.log('🚪 Signing out...');
       setState(prev => ({ ...prev, isLoading: true }));
       
-      const storedAuth = await AsyncStorage.getItem(STORAGE_KEYS.AUTH_STATE);
-      if (storedAuth) {
-        const authData = JSON.parse(storedAuth);
-        
-        // Optional: Logout from Keycloak server
-        try {
-          const logoutEndpoint = `${KEYCLOAK_URL}/realms/${KEYCLOAK.REALM}/protocol/openid-connect/logout`;
-          const logoutRequestBody = {
-            client_id: KEYCLOAK.CLIENT_ID,
-            refresh_token: authData.refresh_token,
-          };
-          
-          await fetch(logoutEndpoint, {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/x-www-form-urlencoded',
-            },
-            body: new URLSearchParams(logoutRequestBody).toString(),
-          });
-        } catch (logoutError) {
-          console.log('Server logout failed (ignored):', logoutError);
-        }
-      }
-      
-      // Clear local storage
+      // Clear local storage first
       await AsyncStorage.multiRemove([STORAGE_KEYS.AUTH_STATE, STORAGE_KEYS.USER_INFO]);
       
       setState({

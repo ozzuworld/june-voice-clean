@@ -1,10 +1,11 @@
-// app/(tabs)/_layout.tsx - Add debug tab temporarily
+// app/(tabs)/_layout.tsx
 import { Tabs } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 
 export default function TabLayout() {
   return (
     <Tabs
+      initialRouteName="chat"
       screenOptions={{
         headerShown: false,
         tabBarStyle: {
@@ -17,6 +18,15 @@ export default function TabLayout() {
       }}
     >
       <Tabs.Screen
+        name="chat"
+        options={{
+          title: 'Chat',
+          tabBarIcon: ({ color, size }) => (
+            <Ionicons name="chatbubble-ellipses" size={size} color={color} />
+          ),
+        }}
+      />
+      <Tabs.Screen
         name="voice"
         options={{
           title: 'Voice',
@@ -26,16 +36,6 @@ export default function TabLayout() {
         }}
       />
       <Tabs.Screen
-        name="chat"
-        options={{
-          title: 'Chat',
-          tabBarIcon: ({ color, size }) => (
-            <Ionicons name="chatbubble" size={size} color={color} />
-          ),
-        }}
-      />
-      {/* TEMPORARY DEBUG TAB */}
-      <Tabs.Screen
         name="debug"
         options={{
           title: 'Debug',
@@ -44,6 +44,7 @@ export default function TabLayout() {
           ),
         }}
       />
+      {/* If you have (tabs)/index.tsx and don't want it, you can keep it hidden or remove the file */}
     </Tabs>
   );
 }

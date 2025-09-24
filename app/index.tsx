@@ -1,29 +1,9 @@
-// app/index.tsx
+// app/index.tsx — minimal redirect logic
 import { Redirect } from 'expo-router';
-import { useAuth } from '@/hooks/useAuth';
-import { LoadingScreen } from '@/components/LoadingScreen';
+import { useAuth } from '@/hooks/useAuth.min';
 
 export default function Index() {
-  const { isAuthenticated, isLoading, user, error } = useAuth();
-
-  console.log('🏠 Index route state:', {
-    isAuthenticated,
-    isLoading,
-    hasUser: !!user,
-    error
-  });
-
-  if (isLoading) {
-    console.log('⏳ Showing loading screen');
-    return <LoadingScreen />;
-  }
-
-  // Redirect based on authentication status
-  if (isAuthenticated) {
-    console.log('✅ User authenticated, redirecting to chat');
-    return <Redirect href="/(tabs)/chat" />;
-  }
-
-  console.log('🚫 User not authenticated, redirecting to login');
-  return <Redirect href="/(auth)/login" />;
+  const { isAuthenticated } = useAuth();
+  if (!isAuthenticated) return <Redirect href="/(auth)/login" />;
+  return <Redirect href="/chat" />; // or your main screen
 }

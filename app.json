@@ -22,7 +22,7 @@
         "CFBundleURLTypes": [
           {
             "CFBundleURLName": "com.yourcompany.junevoice",
-            "CFBundleURLSchemes": ["june"]
+            "CFBundleURLSchemes": ["june", "exp"]
           }
         ]
       }
@@ -46,6 +46,9 @@
           "data": [
             {
               "scheme": "june"
+            },
+            {
+              "scheme": "exp"
             }
           ],
           "category": ["BROWSABLE", "DEFAULT"]
@@ -59,7 +62,13 @@
     },
     "plugins": [
       "expo-router",
-      "expo-secure-store"
+      "expo-secure-store",
+      [
+        "expo-av",
+        {
+          "microphonePermission": "This app needs access to microphone for voice chat with AI."
+        }
+      ]
     ],
     "experiments": {
       "typedRoutes": true

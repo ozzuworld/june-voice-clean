@@ -1,34 +1,18 @@
-// config/app.config.ts - FIXED TO USE CUSTOM DOMAIN CONSISTENTLY
-
-export default {
-  // FIXED: Use custom domain everywhere consistently
+// config/app.config.ts
+const APP_CONFIG = {
   KEYCLOAK_URL: 'https://idp.allsafe.world',
   KEYCLOAK: {
-    REALM: 'june',
+    REALM: 'allsafe',
     CLIENT_ID: 'june-mobile-app',
   },
-  REDIRECT_SCHEME: 'june',
-  
+  REDIRECT_SCHEME: 'june', // expo scheme: june://auth/callback
+
   SERVICES: {
-    // FIXED: All services now use consistent custom domains
-    orchestrator: 'https://june-orchestrator-359243954.us-central1.run.app',
-    stt: 'https://june-stt-359243954.us-central1.run.app',
-    tts: 'https://june-tts-359243954.us-central1.run.app',
-    idp: 'https://idp.allsafe.world',  // FIXED: Use custom domain
+    orchestrator: 'https://api.allsafe.world',
+    stt: 'https://stt.allsafe.world',
+    tts: 'https://tts.allsafe.world',
+    idp: 'https://idp.allsafe.world',
   },
-  
-  // Voice configuration
-  VOICES: {
-    default: 'assistant_female',
-    available: {
-      'assistant_female': { 
-        name: 'Assistant Female', 
-        description: 'Friendly female voice' 
-      },
-      'assistant_male': { 
-        name: 'Assistant Male', 
-        description: 'Professional male voice' 
-      }
-    }
-  }
-};
+} as const;
+
+export default APP_CONFIG;

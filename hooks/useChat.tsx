@@ -1,6 +1,7 @@
-// hooks/useChat.tsx - FIXED VERSION
+// hooks/useChat.tsx - UPDATED FOR API.ALLSAFE.WORLD
 import React, { createContext, useCallback, useContext, useState } from 'react';
 import { useAuth } from './useAuth';
+import APP_CONFIG from '@/config/app.config';
 
 interface Message {
   id: string;
@@ -24,9 +25,6 @@ interface ChatContextType extends ChatState {
 }
 
 const ChatContext = createContext<ChatContextType | null>(null);
-
-// Your orchestrator service URL
-const ORCHESTRATOR_URL = 'https://june-orchestrator-359243954.us-central1.run.app';
 
 export function ChatProvider({ children }: { children: React.ReactNode }) {
   const { accessToken } = useAuth();
@@ -56,7 +54,6 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
       status: 'sending',
     };
 
-    // Add user message immediately
     setState(prev => ({
       ...prev,
       messages: [...prev.messages, userMessage],
@@ -67,11 +64,13 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
     try {
       console.log('💬 Sending message to orchestrator:', trimmedText);
       
-      // FIXED: Better request configuration with timeout
+      // UPDATED: Use new API endpoint
+      const orchestratorUrl = `${APP_CONFIG.SERVICES.orchestrator}${APP_CONFIG.ENDPOINTS.CHAT}`;
+      
       const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 30000); // 30 second timeout
+      const timeoutId = setTimeout(() => controller.abort(), 30000);
 
-      const response = await fetch(`${ORCHESTRATOR_URL}/v1/chat`, {
+      const response = await fetch(orchestratorUrl, {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${accessToken}`,
@@ -95,7 +94,6 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
       const data = await response.json();
       console.log('✅ Chat response received:', data);
 
-      // Mark user message as sent
       const sentUserMessage: Message = {
         ...userMessage,
         status: 'sent',
@@ -103,13 +101,12 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
 
       const botMessage: Message = {
         id: (Date.now() + 1).toString(),
-        text: data.reply || 'Sorry, I couldn\'t process your message.',
+        text: data.reply || data.response_text || 'Sorry, I couldn\'t process your message.',
         isUser: false,
         timestamp: new Date(),
         status: 'sent',
       };
 
-      // FIXED: Update messages with both sent user message and bot response
       setState(prev => ({
         ...prev,
         messages: [...prev.messages.slice(0, -1), sentUserMessage, botMessage],
@@ -119,7 +116,6 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
     } catch (error: any) {
       console.error('💥 Chat error:', error);
       
-      // FIXED: Handle different error types
       let errorMessage = 'Failed to send message';
       if (error.name === 'AbortError') {
         errorMessage = 'Request timed out. Please try again.';
@@ -127,7 +123,6 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
         errorMessage = error.message;
       }
 
-      // Mark user message as error
       const errorUserMessage: Message = {
         ...userMessage,
         status: 'error',
@@ -175,7 +170,6 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
 export function useChat(): ChatContextType {
   const context = useContext(ChatContext);
   if (!context) {
-    // FIXED: Error constructor with capital E
     throw new Error('useChat must be used within a ChatProvider');
   }
   return context;

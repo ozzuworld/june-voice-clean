@@ -5,7 +5,6 @@ import { Ionicons } from '@expo/vector-icons';
 export default function TabLayout() {
   return (
     <Tabs
-      initialRouteName="chat"
       screenOptions={{
         headerShown: false,
         tabBarStyle: {
@@ -44,7 +43,13 @@ export default function TabLayout() {
           ),
         }}
       />
-      {/* If you have (tabs)/index.tsx and don't want it, you can keep it hidden or remove the file */}
+      {/* Hide the unused 'two' screen */}
+      <Tabs.Screen
+        name="two"
+        options={{
+          href: null, // This hides the tab
+        }}
+      />
     </Tabs>
   );
 }

@@ -64,11 +64,10 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
     try {
       console.log('💬 Sending message to orchestrator:', trimmedText);
       
-      // UPDATED: Use new API endpoint
       const orchestratorUrl = `${APP_CONFIG.SERVICES.orchestrator}${APP_CONFIG.ENDPOINTS.CHAT}`;
       
       const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 30000);
+      const timeoutId = setTimeout(() => controller.abort(), APP_CONFIG.TIMEOUTS.CHAT);
 
       const response = await fetch(orchestratorUrl, {
         method: 'POST',
@@ -77,7 +76,12 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          user_input: trimmedText
+          user_input: trimmedText,
+          // Add any additional parameters your orchestrator expects
+          context: {
+            session_id: `session_${Date.now()}`,
+            platform: 'mobile',
+          }
         }),
         signal: controller.signal,
       });
@@ -86,9 +90,15 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
       console.log('📨 Chat response status:', response.status);
 
       if (!response.ok) {
-        const errorText = await response.text();
-        console.error('❌ Chat request failed:', errorText);
-        throw new Error(`Chat request failed: ${response.status} ${errorText}`);
+        let errorText = `HTTP ${response.status}`;
+        try {
+          const errorData = await response.text();
+          console.error('❌ Chat request failed:', errorData);
+          errorText = errorData || errorText;
+        } catch (e) {
+          console.error('❌ Chat request failed with status:', response.status);
+        }
+        throw new Error(`Chat request failed: ${errorText}`);
       }
 
       const data = await response.json();
@@ -99,9 +109,25 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
         status: 'sent',
       };
 
+      // Handle various response formats from orchestrator
+      let responseText = '';
+      if (typeof data === 'string') {
+        responseText = data;
+      } else if (data.reply) {
+        responseText = data.reply;
+      } else if (data.response_text) {
+        responseText = data.response_text;
+      } else if (data.ai_response) {
+        responseText = data.ai_response;
+      } else if (data.message) {
+        responseText = data.message;
+      } else {
+        responseText = 'Sorry, I couldn\'t process your message.';
+      }
+
       const botMessage: Message = {
         id: (Date.now() + 1).toString(),
-        text: data.reply || data.response_text || 'Sorry, I couldn\'t process your message.',
+        text: responseText,
         isUser: false,
         timestamp: new Date(),
         status: 'sent',

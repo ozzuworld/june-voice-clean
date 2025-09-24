@@ -1,10 +1,17 @@
-// app/(auth)/_layout.tsx
+// app/_layout.tsx — Add back the missing providers
 import { Stack } from 'expo-router';
-import { AuthProvider } from '../../hooks/useAuth'; // <-- two dots, no .min
-export default function AuthLayout() {
+import { AuthProvider } from '@/hooks/useAuth';
+import { ChatProvider } from '@/hooks/useChat';
+import { VoiceProvider } from '@/hooks/useVoice';
+
+export default function RootLayout() {
   return (
     <AuthProvider>
-      <Stack screenOptions={{ headerShown: false }} />
+      <ChatProvider>
+        <VoiceProvider>
+          <Stack screenOptions={{ headerShown: false }} />
+        </VoiceProvider>
+      </ChatProvider>
     </AuthProvider>
   );
 }

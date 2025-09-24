@@ -22,7 +22,7 @@
         "CFBundleURLTypes": [
           {
             "CFBundleURLName": "com.yourcompany.junevoice",
-            "CFBundleURLSchemes": ["june", "exp"]
+            "CFBundleURLSchemes": ["june"]
           }
         ]
       }
@@ -46,9 +46,6 @@
           "data": [
             {
               "scheme": "june"
-            },
-            {
-              "scheme": "exp"
             }
           ],
           "category": ["BROWSABLE", "DEFAULT"]

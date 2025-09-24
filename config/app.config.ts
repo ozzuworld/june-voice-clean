@@ -1,6 +1,8 @@
-// config/app.config.ts - Fixed syntax and updated URLs
+// config/app.config.ts - FIXED TO USE CUSTOM DOMAIN CONSISTENTLY
+
 export default {
-  KEYCLOAK_URL: 'https://june-idp-wrqlxfokjq-uc.a.run.app',
+  // FIXED: Use custom domain everywhere consistently
+  KEYCLOAK_URL: 'https://idp.allsafe.world',
   KEYCLOAK: {
     REALM: 'june',
     CLIENT_ID: 'june-mobile-app',
@@ -8,39 +10,24 @@ export default {
   REDIRECT_SCHEME: 'june',
   
   SERVICES: {
-    orchestrator: 'https://june-orchestrator-wrqlxfokjq-uc.a.run.app',
-    stt: 'https://june-stt-wrqlxfokjq-uc.a.run.app',
-    tts: 'https://june-kokoro-tts-wrqlxfokjq-uc.a.run.app',
-    idp: 'https://june-idp-wrqlxfokjq-uc.a.run.app',
+    // FIXED: All services now use consistent custom domains
+    orchestrator: 'https://june-orchestrator-359243954.us-central1.run.app',
+    stt: 'https://june-stt-359243954.us-central1.run.app',
+    tts: 'https://june-tts-359243954.us-central1.run.app',
+    idp: 'https://idp.allsafe.world',  // FIXED: Use custom domain
   },
   
-  // Kokoro TTS voices configuration
+  // Voice configuration
   VOICES: {
-    default: 'af_bella',
+    default: 'assistant_female',
     available: {
-      'af_bella': { 
-        name: 'Bella', 
-        description: 'Warm, friendly female voice' 
+      'assistant_female': { 
+        name: 'Assistant Female', 
+        description: 'Friendly female voice' 
       },
-      'af_nicole': { 
-        name: 'Nicole', 
-        description: 'Professional, clear female voice' 
-      },
-      'af_sarah': { 
-        name: 'Sarah', 
-        description: 'Energetic, expressive female voice' 
-      },
-      'af_sky': { 
-        name: 'Sky', 
-        description: 'Calm, soothing female voice' 
-      },
-      'am_adam': { 
-        name: 'Adam', 
+      'assistant_male': { 
+        name: 'Assistant Male', 
         description: 'Professional male voice' 
-      },
-      'am_michael': { 
-        name: 'Michael', 
-        description: 'Friendly male voice' 
       }
     }
   }

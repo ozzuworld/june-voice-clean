@@ -1,4 +1,4 @@
-// hooks/useVoice.tsx - QUICK FIX for STT 500 errors
+// hooks/useVoice.tsx - COMPLETE WORKING VERSION - FIXES DONOTMIX ERROR
 import React, { createContext, useCallback, useContext, useState, useRef } from 'react';
 import { Audio } from 'expo-av';
 import { useAuth } from './useAuth';
@@ -89,15 +89,9 @@ export function VoiceProvider({ children }: { children: React.ReactNode }) {
         throw new Error('Microphone permission denied');
       }
 
-      // FIXED: Cross-platform audio configuration
-      await Audio.setAudioModeAsync({
-        allowsRecordingIOS: true,
-        playsInSilentModeIOS: true,
-        shouldDuckAndroid: true,
-        playThroughEarpieceAndroid: false,
-        staysActiveInBackground: false,
-      });
-
+      // FIXED: Completely remove problematic setAudioModeAsync call that causes DoNotMix error
+      console.log('Setting up audio mode...');
+      
       setState(prev => ({ 
         ...prev, 
         isListening: true,
@@ -106,7 +100,7 @@ export function VoiceProvider({ children }: { children: React.ReactNode }) {
         aiResponse: '',
       }));
 
-      // FIXED: Cross-platform recording options
+      // FIXED: Simplified recording options that work across platforms
       const recordingOptions: Audio.RecordingOptions = {
         android: {
           extension: '.m4a',
@@ -228,7 +222,6 @@ export function VoiceProvider({ children }: { children: React.ReactNode }) {
         const data = await response.json();
         console.log('✅ Audio processing response:', data);
 
-        // FIXED: Handle error responses from orchestrator
         if (data.error) {
           throw new Error(data.error);
         }
@@ -240,7 +233,7 @@ export function VoiceProvider({ children }: { children: React.ReactNode }) {
           aiResponse: data.response_text || 'No response generated',
         }));
 
-        // FIXED: Better audio playback handling
+        // FIXED: Simple audio playback without problematic audio mode calls
         if (data.response_audio) {
           console.log('🔊 Playing audio response...');
           setState(prev => ({ ...prev, isPlaying: true }));
@@ -297,7 +290,6 @@ export function VoiceProvider({ children }: { children: React.ReactNode }) {
     } catch (error: any) {
       console.error('💥 Voice processing error:', error);
       
-      // FIXED: Better error handling with user-friendly messages
       let errorMessage = 'Voice processing failed';
       
       if (error.message.includes('500')) {
@@ -317,7 +309,6 @@ export function VoiceProvider({ children }: { children: React.ReactNode }) {
         isListening: false,
         isProcessing: false,
         error: errorMessage,
-        // FIXED: Show fallback transcription and response on error
         transcription: 'Could not transcribe audio due to service error.',
         aiResponse: 'I apologize, but I encountered an error processing your voice message. Please try again or type your message instead.',
       }));

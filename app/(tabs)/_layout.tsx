@@ -1,4 +1,4 @@
-// app/(tabs)/_layout.tsx - Tab navigation
+// app/(tabs)/_layout.tsx - Add debug tab temporarily
 import { Tabs } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 
@@ -6,7 +6,7 @@ export default function TabLayout() {
   return (
     <Tabs
       screenOptions={{
-        headerShown: false, // This removes all headers
+        headerShown: false,
         tabBarStyle: {
           backgroundColor: '#000',
           borderTopColor: '#333',
@@ -14,10 +14,6 @@ export default function TabLayout() {
         },
         tabBarActiveTintColor: '#667eea',
         tabBarInactiveTintColor: '#666',
-        tabBarLabelStyle: {
-          fontSize: 12,
-          fontWeight: '500',
-        },
       }}
     >
       <Tabs.Screen
@@ -35,6 +31,16 @@ export default function TabLayout() {
           title: 'Chat',
           tabBarIcon: ({ color, size }) => (
             <Ionicons name="chatbubble" size={size} color={color} />
+          ),
+        }}
+      />
+      {/* TEMPORARY DEBUG TAB */}
+      <Tabs.Screen
+        name="debug"
+        options={{
+          title: 'Debug',
+          tabBarIcon: ({ color, size }) => (
+            <Ionicons name="bug" size={size} color={color} />
           ),
         }}
       />

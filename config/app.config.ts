@@ -5,7 +5,7 @@ const APP_CONFIG = {
     REALM: 'allsafe', 
     CLIENT_ID: 'june-mobile-app',
   },
-  REDIRECT_SCHEME: 'june', // expo scheme: june://auth/callback
+  REDIRECT_SCHEME: 'june://auth/callback', // expo scheme: june://auth/callback
 
   SERVICES: {
     // Use your actual deployed service URLs

@@ -1,4 +1,4 @@
-// hooks/useChat.tsx - UPDATED FOR API.ALLSAFE.WORLD
+// hooks/useChat.tsx - FIXED for orchestrator integration
 import React, { createContext, useCallback, useContext, useState } from 'react';
 import { useAuth } from './useAuth';
 import APP_CONFIG from '@/config/app.config';
@@ -69,6 +69,7 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), APP_CONFIG.TIMEOUTS.CHAT);
 
+      // FIXED: Match backend ConversationInput schema
       const response = await fetch(orchestratorUrl, {
         method: 'POST',
         headers: {
@@ -76,11 +77,14 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          user_input: trimmedText,
-          // Add any additional parameters your orchestrator expects
-          context: {
+          text: trimmedText,           // Backend expects 'text', not 'user_input'
+          language: 'en',
+          voice_id: null,
+          tool_hints: null,
+          metadata: {
             session_id: `session_${Date.now()}`,
             platform: 'mobile',
+            timestamp: new Date().toISOString(),
           }
         }),
         signal: controller.signal,
@@ -92,11 +96,13 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
       if (!response.ok) {
         let errorText = `HTTP ${response.status}`;
         try {
-          const errorData = await response.text();
+          const errorData = await response.json();
           console.error('❌ Chat request failed:', errorData);
-          errorText = errorData || errorText;
+          errorText = errorData.detail || errorData.message || errorText;
         } catch (e) {
-          console.error('❌ Chat request failed with status:', response.status);
+          const textError = await response.text();
+          console.error('❌ Chat request failed:', textError);
+          errorText = textError || errorText;
         }
         throw new Error(`Chat request failed: ${errorText}`);
       }
@@ -104,26 +110,26 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
       const data = await response.json();
       console.log('✅ Chat response received:', data);
 
+      // FIXED: Handle ConversationOutput response format
+      let responseText = '';
+      if (data.ok && data.message) {
+        // ConversationOutput format: { ok: true, message: { text: "...", ... }, ... }
+        responseText = data.message.text || 'No response text available';
+      } else if (data.message?.text) {
+        responseText = data.message.text;
+      } else if (data.text) {
+        responseText = data.text;
+      } else if (typeof data === 'string') {
+        responseText = data;
+      } else {
+        responseText = 'Sorry, I couldn\'t process your message.';
+        console.warn('⚠️ Unexpected response format:', data);
+      }
+
       const sentUserMessage: Message = {
         ...userMessage,
         status: 'sent',
       };
-
-      // Handle various response formats from orchestrator
-      let responseText = '';
-      if (typeof data === 'string') {
-        responseText = data;
-      } else if (data.reply) {
-        responseText = data.reply;
-      } else if (data.response_text) {
-        responseText = data.response_text;
-      } else if (data.ai_response) {
-        responseText = data.ai_response;
-      } else if (data.message) {
-        responseText = data.message;
-      } else {
-        responseText = 'Sorry, I couldn\'t process your message.';
-      }
 
       const botMessage: Message = {
         id: (Date.now() + 1).toString(),
@@ -138,6 +144,8 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
         messages: [...prev.messages.slice(0, -1), sentUserMessage, botMessage],
         isLoading: false,
       }));
+
+      console.log('✅ Chat message processed successfully');
 
     } catch (error: any) {
       console.error('💥 Chat error:', error);

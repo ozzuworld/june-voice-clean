@@ -1,4 +1,4 @@
-// hooks/useChat.tsx - FIXED for orchestrator integration
+// hooks/useChat.tsx - FIXED: Correct payload format and error handling
 import React, { createContext, useCallback, useContext, useState } from 'react';
 import { useAuth } from './useAuth';
 import APP_CONFIG from '@/config/app.config';
@@ -63,28 +63,24 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
 
     try {
       console.log('💬 Sending message to orchestrator:', trimmedText);
-      
-      const orchestratorUrl = `${APP_CONFIG.SERVICES.orchestrator}${APP_CONFIG.ENDPOINTS.CHAT}`;
+      console.log('🔗 Endpoint:', `${APP_CONFIG.SERVICES.orchestrator}${APP_CONFIG.ENDPOINTS.CHAT}`);
       
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), APP_CONFIG.TIMEOUTS.CHAT);
 
-      // FIXED: Match backend ConversationInput schema
-      const response = await fetch(orchestratorUrl, {
+      const response = await fetch(`${APP_CONFIG.SERVICES.orchestrator}${APP_CONFIG.ENDPOINTS.CHAT}`, {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${accessToken}`,
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          text: trimmedText,           // Backend expects 'text', not 'user_input'
+          text: trimmedText,  // ✅ FIXED: Use 'text' not 'user_input'
           language: 'en',
-          voice_id: null,
-          tool_hints: null,
+          voice_id: 'default',
           metadata: {
             session_id: `session_${Date.now()}`,
             platform: 'mobile',
-            timestamp: new Date().toISOString(),
           }
         }),
         signal: controller.signal,
@@ -96,13 +92,11 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
       if (!response.ok) {
         let errorText = `HTTP ${response.status}`;
         try {
-          const errorData = await response.json();
+          const errorData = await response.text();
           console.error('❌ Chat request failed:', errorData);
-          errorText = errorData.detail || errorData.message || errorText;
+          errorText = errorData || errorText;
         } catch (e) {
-          const textError = await response.text();
-          console.error('❌ Chat request failed:', textError);
-          errorText = textError || errorText;
+          console.error('❌ Chat request failed with status:', response.status);
         }
         throw new Error(`Chat request failed: ${errorText}`);
       }
@@ -110,26 +104,31 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
       const data = await response.json();
       console.log('✅ Chat response received:', data);
 
-      // FIXED: Handle ConversationOutput response format
-      let responseText = '';
-      if (data.ok && data.message) {
-        // ConversationOutput format: { ok: true, message: { text: "...", ... }, ... }
-        responseText = data.message.text || 'No response text available';
-      } else if (data.message?.text) {
-        responseText = data.message.text;
-      } else if (data.text) {
-        responseText = data.text;
-      } else if (typeof data === 'string') {
-        responseText = data;
-      } else {
-        responseText = 'Sorry, I couldn\'t process your message.';
-        console.warn('⚠️ Unexpected response format:', data);
-      }
-
       const sentUserMessage: Message = {
         ...userMessage,
         status: 'sent',
       };
+
+      // ✅ FIXED: Handle the correct response format from your orchestrator
+      let responseText = '';
+      
+      if (data.ok && data.message && data.message.text) {
+        // Your orchestrator returns: { ok: true, message: { text: "..." } }
+        responseText = data.message.text;
+      } else if (data.reply) {
+        responseText = data.reply;
+      } else if (data.response_text) {
+        responseText = data.response_text;
+      } else if (data.ai_response) {
+        responseText = data.ai_response;
+      } else if (data.message) {
+        responseText = data.message;
+      } else if (typeof data === 'string') {
+        responseText = data;
+      } else {
+        console.warn('Unexpected response format:', data);
+        responseText = 'I received your message, but had trouble formatting my response.';
+      }
 
       const botMessage: Message = {
         id: (Date.now() + 1).toString(),
@@ -145,7 +144,7 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
         isLoading: false,
       }));
 
-      console.log('✅ Chat message processed successfully');
+      console.log('✅ Message exchange completed successfully');
 
     } catch (error: any) {
       console.error('💥 Chat error:', error);

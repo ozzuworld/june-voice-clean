@@ -1,4 +1,4 @@
-// app/(tabs)/chat.tsx
+// app/(tabs)/chat.tsx - FIXED: Import useChat from the real hooks file
 import { useEffect, useRef, useState } from 'react';
 import {
   FlatList,
@@ -18,18 +18,19 @@ import { ThemedText } from '@/components/ThemedText';
 import { ThemedView } from '@/components/ThemedView';
 import { Colors } from '@/constants/Colors';
 import { useAuth } from '@/hooks/useAuth';
-import { useChat } from '@/app/_layout'; // Fixed import - now importing from _layout
+import { useChat } from '@/hooks/useChat'; // ← FIXED: Import from the real hooks file
 import { useColorScheme } from '@/hooks/useColorScheme';
 import type { Message } from '@/types/chat.types';
 
 export default function ChatScreen() {
   const colorScheme = useColorScheme();
   const { user, signOut } = useAuth();
-  const { messages, sendMessage, isLoading, clearChat } = useChat();
+  const { messages, sendMessage, isLoading, clearChat } = useChat(); // ← Now using REAL chat provider
   const [inputText, setInputText] = useState('');
   const flatListRef = useRef<FlatList>(null);
   const fadeAnim = useRef(new Animated.Value(0)).current;
 
+  // ... rest of your component stays the same
   useEffect(() => {
     Animated.timing(fadeAnim, {
       toValue: 1,

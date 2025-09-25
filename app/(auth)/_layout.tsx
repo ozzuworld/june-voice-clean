@@ -1,17 +1,18 @@
-// app/_layout.tsx — Add back the missing providers
+// app/(auth)/_layout.tsx — FIXED: Remove duplicate providers
 import { Stack } from 'expo-router';
-import { AuthProvider } from '@/hooks/useAuth';
-import { ChatProvider } from '@/hooks/useChat';
-import { VoiceProvider } from '@/hooks/useVoice';
 
-export default function RootLayout() {
+export default function AuthLayout() {
+  console.log('🔐 AuthLayout rendering...');
+  
+  // DO NOT wrap in providers here - they're already in root layout
   return (
-    <AuthProvider>
-      <ChatProvider>
-        <VoiceProvider>
-          <Stack screenOptions={{ headerShown: false }} />
-        </VoiceProvider>
-      </ChatProvider>
-    </AuthProvider>
+    <Stack 
+      screenOptions={{ 
+        headerShown: false,
+        animation: 'none', // Prevent animation-related unmounts
+      }}
+    >
+      <Stack.Screen name="login" />
+    </Stack>
   );
 }

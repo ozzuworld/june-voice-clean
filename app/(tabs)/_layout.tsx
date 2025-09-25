@@ -1,55 +1,33 @@
-// app/(tabs)/_layout.tsx
-import { Tabs } from 'expo-router';
-import { Ionicons } from '@expo/vector-icons';
+// app/_layout.tsx - FIXED: Ensure AuthProvider never unmounts
+import { Stack } from 'expo-router';
+import React from 'react';
+import { AuthProvider } from '@/hooks/useAuth';
+import { ChatProvider } from '@/hooks/useChat';
+import { VoiceProvider } from '@/hooks/useVoice';
 
-export default function TabLayout() {
+export default function RootLayout() {
+  console.log('🏠 RootLayout rendering...');
+  
   return (
-    <Tabs
-      screenOptions={{
-        headerShown: false,
-        tabBarStyle: {
-          backgroundColor: '#000',
-          borderTopColor: '#333',
-          height: 60,
-        },
-        tabBarActiveTintColor: '#667eea',
-        tabBarInactiveTintColor: '#666',
-      }}
-    >
-      <Tabs.Screen
-        name="chat"
-        options={{
-          title: 'Chat',
-          tabBarIcon: ({ color, size }) => (
-            <Ionicons name="chatbubble-ellipses" size={size} color={color} />
-          ),
-        }}
-      />
-      <Tabs.Screen
-        name="voice"
-        options={{
-          title: 'Voice',
-          tabBarIcon: ({ color, size }) => (
-            <Ionicons name="mic" size={size} color={color} />
-          ),
-        }}
-      />
-      <Tabs.Screen
-        name="debug"
-        options={{
-          title: 'Debug',
-          tabBarIcon: ({ color, size }) => (
-            <Ionicons name="bug" size={size} color={color} />
-          ),
-        }}
-      />
-      {/* Hide the unused 'two' screen */}
-      <Tabs.Screen
-        name="two"
-        options={{
-          href: null, // This hides the tab
-        }}
-      />
-    </Tabs>
+    // CRITICAL: AuthProvider must be at the very root and never unmount
+    <AuthProvider>
+      <ChatProvider>
+        <VoiceProvider>
+          {/* Use Stack with headerShown: false to prevent navigation-related unmounts */}
+          <Stack 
+            screenOptions={{ 
+              headerShown: false,
+              // IMPORTANT: Prevent screen animations that might cause unmounts
+              animation: 'none', 
+            }}
+          >
+            {/* Define all possible routes to prevent dynamic loading issues */}
+            <Stack.Screen name="index" />
+            <Stack.Screen name="(auth)" />
+            <Stack.Screen name="(tabs)" />
+          </Stack>
+        </VoiceProvider>
+      </ChatProvider>
+    </AuthProvider>
   );
 }

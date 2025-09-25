@@ -1,9 +1,11 @@
-// app/_layout.tsx — Simple inline version
+// app/_layout.tsx — Real providers, not placeholders
 import { Stack } from 'expo-router';
 import React, { createContext, useCallback, useContext, useState } from 'react';
-import { AuthProvider, useAuth } from '@/hooks/useAuth';
+import { AuthProvider } from '@/hooks/useAuth';
+import { ChatProvider } from '@/hooks/useChat';
+import { VoiceProvider } from '@/hooks/useVoice'; // Import real VoiceProvider
 
-// Simple inline ChatProvider for now
+// Simple inline ChatProvider for now (keep this)
 interface Message {
   id: string;
   text: string;
@@ -24,7 +26,6 @@ interface ChatContextType {
 const ChatContext = createContext<ChatContextType | null>(null);
 
 function InlineChatProvider({ children }: { children: React.ReactNode }) {
-  // Remove useAuth dependency for now - just make it work
   const [messages, setMessages] = useState<Message[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -101,23 +102,24 @@ function InlineChatProvider({ children }: { children: React.ReactNode }) {
   );
 }
 
-// Export the useChat hook so other files can import it
-export { useChat };
-
-// Simple inline VoiceProvider placeholder
-function InlineVoiceProvider({ children }: { children: React.ReactNode }) {
-  return <>{children}</>;
+// Define the useChat hook that was missing
+export function useChat(): ChatContextType {
+  const context = useContext(ChatContext);
+  if (!context) {
+    throw new Error('useChat must be used within a ChatProvider');
+  }
+  return context;
 }
 
 export default function RootLayout() {
-  console.log('🔧 RootLayout rendering with inline providers');
+  console.log('🔧 RootLayout rendering with REAL voice provider');
   
   return (
     <AuthProvider>
       <InlineChatProvider>
-        <InlineVoiceProvider>
+        <VoiceProvider>
           <Stack screenOptions={{ headerShown: false }} />
-        </InlineVoiceProvider>
+        </VoiceProvider>
       </InlineChatProvider>
     </AuthProvider>
   );

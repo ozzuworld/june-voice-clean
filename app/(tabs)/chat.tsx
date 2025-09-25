@@ -18,7 +18,7 @@ import { ThemedText } from '@/components/ThemedText';
 import { ThemedView } from '@/components/ThemedView';
 import { Colors } from '@/constants/Colors';
 import { useAuth } from '@/hooks/useAuth';
-import { useChat } from '@/hooks/useChat';
+import { useChat } from '@/app/_layout'; // Fixed import - now importing from _layout
 import { useColorScheme } from '@/hooks/useColorScheme';
 import type { Message } from '@/types/chat.types';
 

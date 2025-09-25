@@ -14,7 +14,7 @@ import { ThemedView } from '@/components/ThemedView';
 import { VoiceCircle } from '@/components/VoiceCircle';
 import { Colors } from '@/constants/Colors';
 import { useAuth } from '@/hooks/useAuth';
-import { useVoice } from '@/hooks/useVoice';
+import { useVoice } from '@/hooks/useVoice'; // Import from real hooks file
 import { useColorScheme } from '@/hooks/useColorScheme';
 
 const { width, height } = Dimensions.get('window');
@@ -32,7 +32,8 @@ export default function VoiceScreen() {
     error,
     startListening,
     stopListening,
-    clearError  // Make sure this is destructured
+    clearError,
+    resetVoice
   } = useVoice();
 
   const fadeAnim = useRef(new Animated.Value(0)).current;
@@ -85,13 +86,13 @@ export default function VoiceScreen() {
     return () => clearTimeout(timer);
   }, []);
 
-  // Handle errors with auto-clear (FIXED)
+  // Handle errors with auto-clear
   useEffect(() => {
     if (error) {
       console.error('Voice error:', error);
       // Auto-clear errors after 5 seconds
       const timer = setTimeout(() => {
-        if (clearError) {  // Check if clearError exists
+        if (clearError) {
           clearError();
         }
       }, 5000);
@@ -103,13 +104,14 @@ export default function VoiceScreen() {
   const handleVoicePress = async () => {
     try {
       if (isListening) {
+        console.log('🛑 Stopping voice recording');
         await stopListening();
       } else if (!isProcessing && !isPlaying) {
+        console.log('🎤 Starting voice recording');
         await startListening();
       }
     } catch (error) {
       console.error('Voice press error:', error);
-      // The error will be handled by the useVoice hook
     }
   };
 

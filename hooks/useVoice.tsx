@@ -1,4 +1,4 @@
-// hooks/useVoice.tsx - Enhanced for low-latency TTS + orchestrator control
+// hooks/useVoice.tsx - Updated for real TTS service format
 import React, { createContext, useCallback, useContext, useRef, useState } from 'react';
 import { Platform, Alert } from 'react-native';
 import { Audio } from 'expo-av';
@@ -79,7 +79,6 @@ export function VoiceProvider({ children }: { children: React.ReactNode }) {
       const recording = new Audio.Recording();
       await recording.prepareToRecordAsync({
         ...Audio.RecordingOptionsPresets.HIGH_QUALITY,
-        // Optimize for voice
         android: {
           extension: '.m4a',
           outputFormat: Audio.AndroidOutputFormat.MPEG_4,
@@ -95,10 +94,6 @@ export function VoiceProvider({ children }: { children: React.ReactNode }) {
           sampleRate: 22050,
           numberOfChannels: 1,
           bitRate: 64000,
-        },
-        web: {
-          mimeType: 'audio/webm;codecs=opus',
-          bitsPerSecond: 64000,
         },
       });
 
@@ -132,7 +127,6 @@ export function VoiceProvider({ children }: { children: React.ReactNode }) {
     isProcessingRef.current = true;
     
     try {
-      // Stop recording
       const recording = recordingRef.current;
       if (!recording) {
         throw new Error('No active recording found');
@@ -154,8 +148,6 @@ export function VoiceProvider({ children }: { children: React.ReactNode }) {
       }));
 
       console.log('🎤 Stopped recording, processing audio...');
-
-      // Process the voice input
       await processVoiceInput(audioUri);
 
     } catch (error: any) {
@@ -264,8 +256,10 @@ export function VoiceProvider({ children }: { children: React.ReactNode }) {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          user_input: text,
-          context: {
+          text: text, // Updated to match orchestrator API
+          language: 'en',
+          voice_id: 'default',
+          metadata: {
             mode: 'voice',
             platform: 'mobile',
             session_id: `voice_${Date.now()}`,
@@ -282,7 +276,17 @@ export function VoiceProvider({ children }: { children: React.ReactNode }) {
       }
 
       const data = await response.json();
-      const aiText = data.reply || data.response_text || data.ai_response || data.message || '';
+      // Handle different response formats from orchestrator
+      let aiText = '';
+      if (typeof data === 'string') {
+        aiText = data;
+      } else if (data.message?.text) {
+        aiText = data.message.text;
+      } else if (data.text) {
+        aiText = data.text;
+      } else {
+        aiText = 'Sorry, I couldn\'t process your request.';
+      }
       
       console.log('🤖 AI Response:', aiText);
       return aiText;
@@ -301,7 +305,7 @@ export function VoiceProvider({ children }: { children: React.ReactNode }) {
     const timeoutId = setTimeout(() => controller.abort(), APP_CONFIG.TIMEOUTS.TTS);
 
     try {
-      // Direct TTS call for low latency
+      // Call TTS service with the expected format
       const response = await fetch(`${APP_CONFIG.SERVICES.tts}${APP_CONFIG.ENDPOINTS.TTS}`, {
         method: 'POST',
         headers: {
@@ -310,10 +314,13 @@ export function VoiceProvider({ children }: { children: React.ReactNode }) {
         },
         body: JSON.stringify({
           text: text,
-          voice: APP_CONFIG.TTS.DEFAULT_VOICE,
+          voice_id: APP_CONFIG.TTS.DEFAULT_VOICE,
+          language: 'en',
+          format: 'wav',
           speed: APP_CONFIG.TTS.DEFAULT_SPEED,
-          audio_encoding: APP_CONFIG.TTS.DEFAULT_ENCODING,
-          quality: APP_CONFIG.TTS.QUALITY,
+          volume: 1.0,
+          pitch: 0.0,
+          metadata: {}
         }),
         signal: controller.signal,
       });
@@ -325,26 +332,18 @@ export function VoiceProvider({ children }: { children: React.ReactNode }) {
         throw new Error(`TTS failed (${response.status}): ${errorText}`);
       }
 
-      const data = await response.json();
+      // The response should be audio bytes directly
+      const audioBlob = await response.arrayBuffer();
       
-      // Handle different response formats
-      let audioData: string;
-      let mimeType = 'audio/wav';
-
-      if (data.audio_base64) {
-        audioData = data.audio_base64;
-        mimeType = data.mime_type || mimeType;
-      } else if (data.audio) {
-        audioData = data.audio;
-      } else {
+      if (!audioBlob || audioBlob.byteLength === 0) {
         throw new Error('No audio data in TTS response');
       }
 
-      // Save and play audio
-      const fileExtension = mimeType.includes('mp3') ? 'mp3' : 'wav';
-      const audioPath = `${FileSystem.cacheDirectory}tts_response.${fileExtension}`;
-
-      await FileSystem.writeAsStringAsync(audioPath, audioData, {
+      // Save audio to file and play
+      const audioPath = `${FileSystem.cacheDirectory}tts_response.wav`;
+      const base64Audio = btoa(String.fromCharCode(...new Uint8Array(audioBlob)));
+      
+      await FileSystem.writeAsStringAsync(audioPath, base64Audio, {
         encoding: FileSystem.EncodingType.Base64,
       });
 
@@ -372,7 +371,6 @@ export function VoiceProvider({ children }: { children: React.ReactNode }) {
       sound.setOnPlaybackStatusUpdate((status) => {
         if (status.isLoaded && status.didJustFinish) {
           setState(s => ({ ...s, isPlaying: false }));
-          // Clean up
           sound.unloadAsync();
           FileSystem.deleteAsync(audioPath, { idempotent: true });
         }
@@ -394,7 +392,6 @@ export function VoiceProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const resetVoice = useCallback(async () => {
-    // Stop any ongoing operations
     if (recordingRef.current) {
       try {
         await recordingRef.current.stopAndUnloadAsync();

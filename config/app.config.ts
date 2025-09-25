@@ -1,4 +1,4 @@
-// config/app.config.ts - Updated for your services
+// config/app.config.ts - Updated for your real services
 const APP_CONFIG = {
   KEYCLOAK_URL: 'https://idp.allsafe.world',
   KEYCLOAK: {
@@ -9,33 +9,33 @@ const APP_CONFIG = {
 
   SERVICES: {
     orchestrator: 'https://api.allsafe.world',
-    stt: 'https://stt.allsafe.world',
+    stt: 'https://stt.allsafe.world', 
     tts: 'https://tts.allsafe.world',
     idp: 'https://idp.allsafe.world',
   },
 
   // API Endpoints
   ENDPOINTS: {
-    CHAT: '/v1/chat',
+    CHAT: '/v1/conversation', // Updated to match your orchestrator
     STT: '/v1/transcribe', 
-    TTS: '/v1/tts',
-    VOICE_PROCESS: '/v1/voice-chat', // If you have a direct voice processing endpoint
+    TTS: '/tts/generate', // Updated to match your TTS service
+    VOICE_PROCESS: '/v1/voice-chat',
   },
 
   // TTS Configuration for low latency
   TTS: {
     DEFAULT_VOICE: 'default',
     DEFAULT_SPEED: 1.0,
-    DEFAULT_ENCODING: 'WAV', // or MP3 for smaller file size
-    QUALITY: 'high', // or 'low' for faster processing
+    DEFAULT_ENCODING: 'WAV',
+    QUALITY: 'high',
   },
 
-  // Timeouts
+  // Timeouts (optimized for voice)
   TIMEOUTS: {
     STT: 15000, // 15 seconds
-    TTS: 10000, // 10 seconds  
-    CHAT: 30000, // 30 seconds
-    VOICE: 45000, // 45 seconds for full voice processing
+    TTS: 8000,  // 8 seconds (reduced for low latency)
+    CHAT: 20000, // 20 seconds 
+    VOICE: 30000, // 30 seconds for full voice processing
   },
 } as const;
 

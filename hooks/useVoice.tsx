@@ -1,4 +1,4 @@
-// hooks/useVoice.tsx - Updated for real TTS service format
+// hooks/useVoice.tsx - Fixed audio setup + STT bypass option
 import React, { createContext, useCallback, useContext, useRef, useState } from 'react';
 import { Platform, Alert } from 'react-native';
 import { Audio } from 'expo-av';
@@ -25,6 +25,10 @@ interface VoiceContextValue extends VoiceState {
 
 const VoiceContext = createContext<VoiceContextValue | undefined>(undefined);
 
+// TEMP: Set this to true to skip STT and use placeholder text
+const SKIP_STT_FOR_TESTING = true;
+const MOCK_TRANSCRIPTION = "Hello, please generate a test response about the weather today.";
+
 export function VoiceProvider({ children }: { children: React.ReactNode }) {
   const [state, setState] = useState<VoiceState>({
     isListening: false,
@@ -40,20 +44,46 @@ export function VoiceProvider({ children }: { children: React.ReactNode }) {
   const isProcessingRef = useRef(false);
   const { accessToken, isAuthenticated } = useAuth();
 
+  // FIXED: Simple and compatible audio mode setup
   const setupAudioMode = useCallback(async () => {
     try {
+      console.log('🔧 Setting up audio mode...');
+      
+      // Use a simpler, more compatible setup that works across expo-av versions
       await Audio.setAudioModeAsync({
         allowsRecordingIOS: true,
-        interruptionModeIOS: Audio.INTERRUPTION_MODE_IOS_DO_NOT_MIX,
         playsInSilentModeIOS: true,
         shouldDuckAndroid: true,
-        interruptionModeAndroid: Audio.INTERRUPTION_MODE_ANDROID_DO_NOT_MIX,
         playThroughEarpieceAndroid: false,
         staysActiveInBackground: false,
+        // Remove interruption mode constants that might not exist
+        ...(Platform.OS === 'ios' && {
+          // Only add iOS-specific settings if we're on iOS
+          interruptionModeIOS: 1, // 1 = DoNotMix mode
+        }),
+        ...(Platform.OS === 'android' && {
+          // Only add Android-specific settings if we're on Android
+          interruptionModeAndroid: 1, // 1 = DoNotMix mode
+        }),
       });
+      
+      console.log('✅ Audio mode setup successful');
     } catch (error) {
-      console.error('Audio mode setup failed:', error);
-      throw new Error('Failed to setup audio mode');
+      console.error('❌ Audio mode setup failed:', error);
+      
+      // Fallback: Try with minimal settings
+      try {
+        console.log('🔄 Trying fallback audio setup...');
+        await Audio.setAudioModeAsync({
+          allowsRecordingIOS: true,
+          playsInSilentModeIOS: true,
+          shouldDuckAndroid: true,
+        });
+        console.log('✅ Fallback audio mode setup successful');
+      } catch (fallbackError) {
+        console.error('❌ Fallback audio setup also failed:', fallbackError);
+        throw new Error(`Audio setup failed: ${fallbackError.message}`);
+      }
     }
   }, []);
 
@@ -69,6 +99,7 @@ export function VoiceProvider({ children }: { children: React.ReactNode }) {
     }
 
     try {
+      console.log('🎤 Starting voice recording...');
       await setupAudioMode();
 
       const { granted } = await Audio.requestPermissionsAsync();
@@ -108,9 +139,9 @@ export function VoiceProvider({ children }: { children: React.ReactNode }) {
         aiResponse: '',
       }));
 
-      console.log('🎤 Started recording');
+      console.log('✅ Recording started successfully');
     } catch (error: any) {
-      console.error('Start recording failed:', error);
+      console.error('❌ Start recording failed:', error);
       setState(s => ({ 
         ...s, 
         error: error.message || 'Failed to start recording',
@@ -136,9 +167,7 @@ export function VoiceProvider({ children }: { children: React.ReactNode }) {
       const audioUri = recording.getURI();
       recordingRef.current = null;
 
-      if (!audioUri) {
-        throw new Error('No audio file generated');
-      }
+      console.log('🎤 Recording stopped, audio saved:', audioUri);
 
       setState(s => ({ 
         ...s, 
@@ -147,11 +176,11 @@ export function VoiceProvider({ children }: { children: React.ReactNode }) {
         error: null,
       }));
 
-      console.log('🎤 Stopped recording, processing audio...');
+      console.log('🔄 Processing voice input...');
       await processVoiceInput(audioUri);
 
     } catch (error: any) {
-      console.error('Stop recording failed:', error);
+      console.error('❌ Stop recording failed:', error);
       setState(s => ({ 
         ...s, 
         isListening: false,
@@ -163,26 +192,40 @@ export function VoiceProvider({ children }: { children: React.ReactNode }) {
     }
   }, [state.isListening]);
 
-  const processVoiceInput = useCallback(async (audioUri: string) => {
+  const processVoiceInput = useCallback(async (audioUri: string | null) => {
     try {
-      // Step 1: Speech-to-Text
-      console.log('📝 Converting speech to text...');
-      const transcription = await speechToText(audioUri);
-      
-      setState(s => ({ ...s, transcription }));
+      let transcription = '';
+
+      if (SKIP_STT_FOR_TESTING) {
+        // TEMP: Skip STT and use mock transcription for testing
+        console.log('⚠️ SKIPPING STT - Using mock transcription for testing');
+        transcription = MOCK_TRANSCRIPTION;
+        setState(s => ({ ...s, transcription }));
+        
+        // Add a small delay to simulate processing
+        await new Promise(resolve => setTimeout(resolve, 1000));
+      } else {
+        // Step 1: Speech-to-Text (when your STT service is ready)
+        console.log('📝 Converting speech to text...');
+        if (!audioUri) {
+          throw new Error('No audio file to process');
+        }
+        transcription = await speechToText(audioUri);
+        setState(s => ({ ...s, transcription }));
+      }
 
       if (!transcription.trim()) {
-        throw new Error('No speech detected in audio');
+        throw new Error('No transcription available');
       }
 
       // Step 2: Get AI response from orchestrator
-      console.log('🤖 Getting AI response...');
+      console.log('🤖 Getting AI response for:', transcription);
       const aiResponse = await getAIResponse(transcription);
       
       setState(s => ({ ...s, aiResponse }));
 
-      // Step 3: Convert AI response to speech (low-latency)
-      console.log('🔊 Converting text to speech...');
+      // Step 3: Convert AI response to speech
+      console.log('🔊 Converting response to speech...');
       await textToSpeech(aiResponse);
 
       setState(s => ({ 
@@ -191,8 +234,10 @@ export function VoiceProvider({ children }: { children: React.ReactNode }) {
         error: null,
       }));
 
+      console.log('✅ Voice processing completed successfully');
+
     } catch (error: any) {
-      console.error('Voice processing failed:', error);
+      console.error('❌ Voice processing failed:', error);
       setState(s => ({ 
         ...s, 
         isProcessing: false,
@@ -206,6 +251,8 @@ export function VoiceProvider({ children }: { children: React.ReactNode }) {
     const timeoutId = setTimeout(() => controller.abort(), APP_CONFIG.TIMEOUTS.STT);
 
     try {
+      console.log('📝 Calling STT service...');
+      
       const formData = new FormData();
       formData.append('audio', {
         uri: audioUri,
@@ -232,7 +279,7 @@ export function VoiceProvider({ children }: { children: React.ReactNode }) {
       const data = await response.json();
       const transcription = data.text || data.transcription || data.transcript || '';
       
-      console.log('📝 Transcription:', transcription);
+      console.log('✅ STT result:', transcription);
       return transcription;
 
     } catch (error: any) {
@@ -249,6 +296,8 @@ export function VoiceProvider({ children }: { children: React.ReactNode }) {
     const timeoutId = setTimeout(() => controller.abort(), APP_CONFIG.TIMEOUTS.CHAT);
 
     try {
+      console.log('🤖 Calling orchestrator with:', text);
+      
       const response = await fetch(`${APP_CONFIG.SERVICES.orchestrator}${APP_CONFIG.ENDPOINTS.CHAT}`, {
         method: 'POST',
         headers: {
@@ -256,7 +305,7 @@ export function VoiceProvider({ children }: { children: React.ReactNode }) {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          text: text, // Updated to match orchestrator API
+          text: text,
           language: 'en',
           voice_id: 'default',
           metadata: {
@@ -272,10 +321,13 @@ export function VoiceProvider({ children }: { children: React.ReactNode }) {
 
       if (!response.ok) {
         const errorText = await response.text();
+        console.error('❌ Orchestrator error response:', errorText);
         throw new Error(`Chat failed (${response.status}): ${errorText}`);
       }
 
       const data = await response.json();
+      console.log('✅ Orchestrator response:', data);
+      
       // Handle different response formats from orchestrator
       let aiText = '';
       if (typeof data === 'string') {
@@ -284,11 +336,15 @@ export function VoiceProvider({ children }: { children: React.ReactNode }) {
         aiText = data.message.text;
       } else if (data.text) {
         aiText = data.text;
+      } else if (data.reply) {
+        aiText = data.reply;
+      } else if (data.response_text) {
+        aiText = data.response_text;
       } else {
         aiText = 'Sorry, I couldn\'t process your request.';
       }
       
-      console.log('🤖 AI Response:', aiText);
+      console.log('✅ Parsed AI response:', aiText);
       return aiText;
 
     } catch (error: any) {
@@ -305,7 +361,9 @@ export function VoiceProvider({ children }: { children: React.ReactNode }) {
     const timeoutId = setTimeout(() => controller.abort(), APP_CONFIG.TIMEOUTS.TTS);
 
     try {
-      // Call TTS service with the expected format
+      console.log('🔊 Calling TTS service with text:', text);
+      
+      // Call your TTS service 
       const response = await fetch(`${APP_CONFIG.SERVICES.tts}${APP_CONFIG.ENDPOINTS.TTS}`, {
         method: 'POST',
         headers: {
@@ -329,6 +387,7 @@ export function VoiceProvider({ children }: { children: React.ReactNode }) {
 
       if (!response.ok) {
         const errorText = await response.text();
+        console.error('❌ TTS error response:', errorText);
         throw new Error(`TTS failed (${response.status}): ${errorText}`);
       }
 
@@ -339,6 +398,8 @@ export function VoiceProvider({ children }: { children: React.ReactNode }) {
         throw new Error('No audio data in TTS response');
       }
 
+      console.log('✅ TTS response received:', audioBlob.byteLength, 'bytes');
+
       // Save audio to file and play
       const audioPath = `${FileSystem.cacheDirectory}tts_response.wav`;
       const base64Audio = btoa(String.fromCharCode(...new Uint8Array(audioBlob)));
@@ -347,17 +408,20 @@ export function VoiceProvider({ children }: { children: React.ReactNode }) {
         encoding: FileSystem.EncodingType.Base64,
       });
 
+      console.log('💾 Audio saved to:', audioPath);
+
       // Clean up previous sound
       if (soundRef.current) {
         try {
           await soundRef.current.stopAsync();
           await soundRef.current.unloadAsync();
         } catch (e) {
-          console.log('Error cleaning up previous sound:', e);
+          console.log('⚠️ Error cleaning up previous sound:', e);
         }
       }
 
       // Play the audio
+      console.log('🎵 Starting audio playback...');
       const { sound } = await Audio.Sound.createAsync(
         { uri: audioPath },
         { shouldPlay: true, volume: 1.0 }
@@ -370,13 +434,19 @@ export function VoiceProvider({ children }: { children: React.ReactNode }) {
       // Monitor playback
       sound.setOnPlaybackStatusUpdate((status) => {
         if (status.isLoaded && status.didJustFinish) {
+          console.log('✅ Audio playback finished');
           setState(s => ({ ...s, isPlaying: false }));
           sound.unloadAsync();
           FileSystem.deleteAsync(audioPath, { idempotent: true });
         }
+        
+        if (status.isLoaded && status.error) {
+          console.error('❌ Audio playback error:', status.error);
+          setState(s => ({ ...s, isPlaying: false }));
+        }
       });
 
-      console.log('🔊 Playing TTS audio');
+      console.log('🔊 Audio playback started successfully');
 
     } catch (error: any) {
       clearTimeout(timeoutId);
@@ -392,11 +462,13 @@ export function VoiceProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const resetVoice = useCallback(async () => {
+    console.log('🔄 Resetting voice state...');
+    
     if (recordingRef.current) {
       try {
         await recordingRef.current.stopAndUnloadAsync();
       } catch (e) {
-        console.log('Error stopping recording:', e);
+        console.log('⚠️ Error stopping recording:', e);
       }
       recordingRef.current = null;
     }
@@ -406,7 +478,7 @@ export function VoiceProvider({ children }: { children: React.ReactNode }) {
         await soundRef.current.stopAsync();
         await soundRef.current.unloadAsync();
       } catch (e) {
-        console.log('Error stopping sound:', e);
+        console.log('⚠️ Error stopping sound:', e);
       }
       soundRef.current = null;
     }
@@ -422,7 +494,7 @@ export function VoiceProvider({ children }: { children: React.ReactNode }) {
       error: null,
     });
 
-    console.log('🔄 Voice state reset');
+    console.log('✅ Voice state reset completed');
   }, []);
 
   const value: VoiceContextValue = {

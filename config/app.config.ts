@@ -1,4 +1,4 @@
-// config/app.config.ts - Updated for your real services
+// config/app.config.ts - Updated for your real deployed services
 const APP_CONFIG = {
   KEYCLOAK_URL: 'https://idp.allsafe.world',
   KEYCLOAK: {
@@ -8,21 +8,22 @@ const APP_CONFIG = {
   REDIRECT_SCHEME: 'june', // expo scheme: june://auth/callback
 
   SERVICES: {
+    // Use your actual deployed service URLs
     orchestrator: 'https://api.allsafe.world',
-    stt: 'https://stt.allsafe.world', 
-    tts: 'https://tts.allsafe.world',
+    stt: 'https://stt.allsafe.world', // Not ready yet, but config is here
+    tts: 'https://tts.allsafe.world', // Your working TTS service
     idp: 'https://idp.allsafe.world',
   },
 
-  // API Endpoints
+  // API Endpoints - Updated to match your service APIs
   ENDPOINTS: {
-    CHAT: '/v1/conversation', // Updated to match your orchestrator
-    STT: '/v1/transcribe', 
-    TTS: '/tts/generate', // Updated to match your TTS service
+    CHAT: '/v1/conversation', // Your orchestrator endpoint
+    STT: '/v1/transcribe',    // STT endpoint (for when ready)
+    TTS: '/tts/generate',     // Your TTS generation endpoint
     VOICE_PROCESS: '/v1/voice-chat',
   },
 
-  // TTS Configuration for low latency
+  // TTS Configuration optimized for your service
   TTS: {
     DEFAULT_VOICE: 'default',
     DEFAULT_SPEED: 1.0,
@@ -30,12 +31,19 @@ const APP_CONFIG = {
     QUALITY: 'high',
   },
 
-  // Timeouts (optimized for voice)
+  // Timeouts optimized for your services
   TIMEOUTS: {
-    STT: 15000, // 15 seconds
-    TTS: 8000,  // 8 seconds (reduced for low latency)
-    CHAT: 20000, // 20 seconds 
+    STT: 15000,   // 15 seconds
+    TTS: 10000,   // 10 seconds for your TTS service
+    CHAT: 20000,  // 20 seconds for orchestrator
     VOICE: 30000, // 30 seconds for full voice processing
+  },
+
+  // Debug flags
+  DEBUG: {
+    SKIP_STT: true, // Set to true while STT is under construction
+    VERBOSE_LOGS: true,
+    MOCK_RESPONSES: false,
   },
 } as const;
 

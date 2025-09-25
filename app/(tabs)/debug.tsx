@@ -7,6 +7,11 @@ import { Button } from '@/components/ui/Button';
 import { AndroidAudioTest } from '@/components/AndroidAudioTest';
 import { useAuth } from '@/hooks/useAuth';
 import APP_CONFIG from '@/config/app.config';
+// In your debug screen, add:
+import { TTSTester } from '@/components/TTSTester';
+
+// Then render it:
+<TTSTester />
 
 interface TestResult {
   service: string;

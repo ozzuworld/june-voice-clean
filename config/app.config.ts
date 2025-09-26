@@ -15,12 +15,12 @@ const APP_CONFIG = {
     idp: 'https://idp.allsafe.world',
   },
 
-  // API Endpoints - Updated to match your service APIs
+  // API Endpoints - FIXED: Updated to match backend routes
   ENDPOINTS: {
-    CHAT: '/v1/conversation', // Your orchestrator endpoint
-    STT: '/v1/transcribe',    // STT endpoint (for when ready)
-    TTS: '/tts/generate',     // Your TTS generation endpoint
-    VOICE_PROCESS: '/v1/conversation',
+    CHAT: '/v1/chat',             // ✅ FIXED: Match backend route
+    STT: '/v1/transcribe',        // STT endpoint (for when ready)
+    TTS: '/tts/generate',         // Your TTS generation endpoint
+    VOICE_PROCESS: '/v1/chat',    // ✅ FIXED: Match backend route
   },
 
   // TTS Configuration optimized for your service

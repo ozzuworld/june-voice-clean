@@ -1,4 +1,4 @@
-// hooks/useChat.tsx - FIXED: Correct payload format for enhanced router
+// hooks/useChat.tsx - SIMPLIFIED for clean orchestrator
 import React, { createContext, useCallback, useContext, useState } from 'react';
 import { useAuth } from './useAuth';
 import APP_CONFIG from '@/config/app.config';
@@ -62,12 +62,13 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
     }));
 
     try {
-      console.log('💬 Sending message to orchestrator:', trimmedText);
+      console.log('💬 Sending message to clean orchestrator:', trimmedText);
       console.log('🔗 Endpoint:', `${APP_CONFIG.SERVICES.orchestrator}${APP_CONFIG.ENDPOINTS.CHAT}`);
       
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), APP_CONFIG.TIMEOUTS.CHAT);
 
+      // ✅ SIMPLIFIED PAYLOAD - matches clean orchestrator
       const response = await fetch(`${APP_CONFIG.SERVICES.orchestrator}${APP_CONFIG.ENDPOINTS.CHAT}`, {
         method: 'POST',
         headers: {
@@ -77,14 +78,10 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
         body: JSON.stringify({
           text: trimmedText,
           language: 'en',
-          voice_id: 'default',
-          include_audio: false,  // ✅ NEW: Disable audio for mobile chat (can be enabled later)
-          speed: 1.0,            // ✅ NEW: Default speech speed
-          extra_extra_metadata: {  // ✅ FIXED: Use correct field name for enhanced router
+          metadata: {
             session_id: `session_${Date.now()}`,
             platform: 'mobile',
-            client_version: '1.0.0',
-            timestamp: Date.now(),
+            client_version: '2.0.0',
           }
         }),
         signal: controller.signal,
@@ -113,20 +110,16 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
         status: 'sent',
       };
 
-      // ✅ UPDATED: Handle the enhanced router response format
+      // ✅ SIMPLIFIED RESPONSE HANDLING
       let responseText = '';
       
       if (data.ok && data.message && data.message.text) {
-        // Enhanced router returns: { ok: true, message: { text: "..." }, audio?: {...} }
+        // Clean orchestrator returns: { ok: true, message: { text: "...", role: "assistant" } }
         responseText = data.message.text;
-      } else if (data.reply) {
-        responseText = data.reply;
-      } else if (data.response_text) {
-        responseText = data.response_text;
-      } else if (data.ai_response) {
-        responseText = data.ai_response;
       } else if (data.message) {
-        responseText = data.message;
+        responseText = typeof data.message === 'string' ? data.message : JSON.stringify(data.message);
+      } else if (data.text) {
+        responseText = data.text;
       } else if (typeof data === 'string') {
         responseText = data;
       } else {

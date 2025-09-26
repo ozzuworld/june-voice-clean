@@ -17,7 +17,7 @@ const APP_CONFIG = {
 
   // API Endpoints - Updated to match your service APIs
   ENDPOINTS: {
-    CHAT: '/v1/conversation', // Your orchestrator endpoint
+    CHAT: '/v1/chat', // Your orchestrator endpoint
     STT: '/v1/transcribe',    // STT endpoint (for when ready)
     TTS: '/tts/generate',     // Your TTS generation endpoint
     VOICE_PROCESS: '/v1/conversation',

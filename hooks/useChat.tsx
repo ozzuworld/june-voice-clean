@@ -1,4 +1,4 @@
-// hooks/useChat.tsx - FIXED: Correct payload format and error handling
+// hooks/useChat.tsx - FIXED: Correct payload format for enhanced router
 import React, { createContext, useCallback, useContext, useState } from 'react';
 import { useAuth } from './useAuth';
 import APP_CONFIG from '@/config/app.config';
@@ -75,12 +75,16 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          text: trimmedText,  // ✅ FIXED: Use 'text' not 'user_input'
+          text: trimmedText,
           language: 'en',
           voice_id: 'default',
-          metadata: {
+          include_audio: false,  // ✅ NEW: Disable audio for mobile chat (can be enabled later)
+          speed: 1.0,            // ✅ NEW: Default speech speed
+          extra_extra_metadata: {  // ✅ FIXED: Use correct field name for enhanced router
             session_id: `session_${Date.now()}`,
             platform: 'mobile',
+            client_version: '1.0.0',
+            timestamp: Date.now(),
           }
         }),
         signal: controller.signal,
@@ -109,11 +113,11 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
         status: 'sent',
       };
 
-      // ✅ FIXED: Handle the correct response format from your orchestrator
+      // ✅ UPDATED: Handle the enhanced router response format
       let responseText = '';
       
       if (data.ok && data.message && data.message.text) {
-        // Your orchestrator returns: { ok: true, message: { text: "..." } }
+        // Enhanced router returns: { ok: true, message: { text: "..." }, audio?: {...} }
         responseText = data.message.text;
       } else if (data.reply) {
         responseText = data.reply;

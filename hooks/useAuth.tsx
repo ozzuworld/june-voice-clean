@@ -60,17 +60,18 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     path: 'auth/callback',
   });
 
-  // Create auth request with PKCE
-  const [request, response, promptAsync] = useAuthRequest(
-    {
-      clientId: CLIENT_ID,
-      scopes: ['openid', 'profile', 'email'],
-      redirectUri: redirectUri,
-      responseType: 'code',
-      usePKCE: true,
-    },
-    discovery
-  );
+const [request, response, promptAsync] = useAuthRequest(
+  {
+    clientId: CLIENT_ID,
+    // 👇 include your audience scope (harmless if it’s already Default in Keycloak)
+    scopes: ['openid', 'profile', 'email', 'orchestrator-aud'],
+    redirectUri: redirectUri,
+    responseType: 'code',
+    usePKCE: true,
+  },
+  discovery
+);
+
 
   console.log(`🔧 Auth setup (${contextId}):`, {
     redirectUri,

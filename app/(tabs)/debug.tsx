@@ -63,6 +63,8 @@ export default function DebugScreen() {
           const jsonResponse = JSON.parse(responseText);
           if (jsonResponse.message && jsonResponse.message.text) {
             displayMessage += ` - Response: "${jsonResponse.message.text.substring(0, 50)}..."`;
+          } else if (jsonResponse.status) {
+            displayMessage += ` - Status: ${jsonResponse.status}`;
           }
         } catch (e) {
           // Not JSON, that's fine
@@ -110,18 +112,28 @@ export default function DebugScreen() {
       'GET'
     );
 
-    // Test Orchestrator Chat with correct payload format
+    // Test Debug Routes endpoint
+    await testService(
+      'Orchestrator Routes',
+      `${APP_CONFIG.SERVICES.orchestrator}/debug/routes`,
+      'GET'
+    );
+
+    // Test Orchestrator Chat with enhanced router payload format
     await testService(
       'Orchestrator Chat',
       `${APP_CONFIG.SERVICES.orchestrator}${APP_CONFIG.ENDPOINTS.CHAT}`,
       'POST',
       {
-        text: 'Hello, this is a debug test from the mobile app',  // ✅ FIXED: Use 'text' not 'user_input'
+        text: 'Hello, this is a debug test from the mobile app',
         language: 'en',
         voice_id: 'default',
-        metadata: {
+        include_audio: false,  // ✅ NEW: Disable audio for testing
+        speed: 1.0,
+        extra_extra_metadata: {  // ✅ FIXED: Use correct field name
           session_id: `debug_${Date.now()}`,
           platform: 'mobile_debug',
+          test_mode: true,
         }
       }
     );
@@ -168,13 +180,16 @@ export default function DebugScreen() {
       `${APP_CONFIG.SERVICES.orchestrator}${APP_CONFIG.ENDPOINTS.CHAT}`,
       'POST',
       { 
-        text: 'Hello from debug screen, please respond with a short greeting', // ✅ FIXED: Use 'text' not 'user_input'
+        text: 'Hello from debug screen, please respond with a short greeting',
         language: 'en',
         voice_id: 'default',
-        metadata: {
+        include_audio: false,  // ✅ Disable audio for testing
+        speed: 1.0,
+        extra_extra_metadata: {  // ✅ FIXED: Use correct field name
           mode: 'debug',
           platform: 'mobile',
           timestamp: Date.now(),
+          test_type: 'chat_only',
         }
       }
     );

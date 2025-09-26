@@ -7,11 +7,6 @@ import { Button } from '@/components/ui/Button';
 import { AndroidAudioTest } from '@/components/AndroidAudioTest';
 import { useAuth } from '@/hooks/useAuth';
 import APP_CONFIG from '@/config/app.config';
-// In your debug screen, add:
-import { TTSTester } from '@/components/TTSTester';
-
-// Then render it:
-<TTSTester />
 
 interface TestResult {
   service: string;
@@ -60,17 +55,31 @@ export default function DebugScreen() {
       const responseTime = Date.now() - startTime;
       
       if (response.ok) {
+        const responseText = await response.text();
+        let displayMessage = `✅ Connected (${response.status})`;
+        
+        // Try to parse JSON response for better debugging
+        try {
+          const jsonResponse = JSON.parse(responseText);
+          if (jsonResponse.message && jsonResponse.message.text) {
+            displayMessage += ` - Response: "${jsonResponse.message.text.substring(0, 50)}..."`;
+          }
+        } catch (e) {
+          // Not JSON, that's fine
+        }
+        
         addResult({
           service: serviceName,
           status: 'success',
-          message: `✅ Connected (${response.status})`,
+          message: displayMessage,
           responseTime,
         });
       } else {
+        const errorText = await response.text();
         addResult({
           service: serviceName,
           status: 'error',
-          message: `❌ Failed: ${response.status} ${response.statusText}`,
+          message: `❌ Failed: ${response.status} ${response.statusText} - ${errorText.substring(0, 100)}`,
           responseTime,
         });
       }
@@ -94,24 +103,39 @@ export default function DebugScreen() {
     setIsRunning(true);
     clearResults();
 
-    // Test Orchestrator
+    // Test Orchestrator Health Check
     await testService(
-      'Orchestrator',
+      'Orchestrator Health',
+      `${APP_CONFIG.SERVICES.orchestrator}/healthz`,
+      'GET'
+    );
+
+    // Test Orchestrator Chat with correct payload format
+    await testService(
+      'Orchestrator Chat',
       `${APP_CONFIG.SERVICES.orchestrator}${APP_CONFIG.ENDPOINTS.CHAT}`,
       'POST',
-      { user_input: 'test' }
+      {
+        text: 'Hello, this is a debug test from the mobile app',  // ✅ FIXED: Use 'text' not 'user_input'
+        language: 'en',
+        voice_id: 'default',
+        metadata: {
+          session_id: `debug_${Date.now()}`,
+          platform: 'mobile_debug',
+        }
+      }
     );
 
     // Test STT (if you have a health check endpoint)
     await testService(
-      'STT Service',
+      'STT Service Health',
       `${APP_CONFIG.SERVICES.stt}/health`,
       'GET'
     );
 
     // Test TTS (if you have a health check endpoint)  
     await testService(
-      'TTS Service',
+      'TTS Service Health',
       `${APP_CONFIG.SERVICES.tts}/health`,
       'GET'
     );
@@ -122,7 +146,7 @@ export default function DebugScreen() {
       `${APP_CONFIG.SERVICES.tts}${APP_CONFIG.ENDPOINTS.TTS}`,
       'POST',
       {
-        text: 'Hello, this is a test',
+        text: 'Hello, this is a test from the debug screen',
         voice: APP_CONFIG.TTS.DEFAULT_VOICE,
         speed: APP_CONFIG.TTS.DEFAULT_SPEED,
         audio_encoding: APP_CONFIG.TTS.DEFAULT_ENCODING,
@@ -144,10 +168,13 @@ export default function DebugScreen() {
       `${APP_CONFIG.SERVICES.orchestrator}${APP_CONFIG.ENDPOINTS.CHAT}`,
       'POST',
       { 
-        user_input: 'Hello, please respond with a short greeting',
-        context: {
+        text: 'Hello from debug screen, please respond with a short greeting', // ✅ FIXED: Use 'text' not 'user_input'
+        language: 'en',
+        voice_id: 'default',
+        metadata: {
           mode: 'debug',
           platform: 'mobile',
+          timestamp: Date.now(),
         }
       }
     );
@@ -188,6 +215,9 @@ export default function DebugScreen() {
           <ThemedText style={styles.sectionTitle}>Service Endpoints</ThemedText>
           <ThemedText style={styles.configText}>
             Orchestrator: {APP_CONFIG.SERVICES.orchestrator}
+          </ThemedText>
+          <ThemedText style={styles.configText}>
+            Chat Endpoint: {APP_CONFIG.ENDPOINTS.CHAT}
           </ThemedText>
           <ThemedText style={styles.configText}>
             STT: {APP_CONFIG.SERVICES.stt}

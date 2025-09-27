@@ -5,7 +5,7 @@ const APP_CONFIG = {
     REALM: 'allsafe', 
     CLIENT_ID: 'june-mobile-app',
   },
-  REDIRECT_SCHEME: 'june://auth/callback', // expo scheme: june://auth/callback
+  REDIRECT_SCHEME: 'june', // expo scheme: june://auth/callback
 
   SERVICES: {
     // Use your actual deployed service URLs
@@ -15,12 +15,11 @@ const APP_CONFIG = {
     idp: 'https://idp.allsafe.world',
   },
 
-  // API Endpoints - FIXED: Updated to match backend routes
-  ENDPOINTS: {
-    CHAT: '/v1/chat',             // ✅ FIXED: Match backend route
-    STT: '/v1/transcribe',        // STT endpoint (for when ready)
-    TTS: '/tts/generate',         // Your TTS generation endpoint
-    VOICE_PROCESS: '/v1/chat',    // ✅ FIXED: Match backend route
+  // API Endpoints - Updated to match your service API    CHAT: '/v1/co    CHAT: '/v1/chconversation // Your orchestrator endpointSSSS
+    API_ENDPOINTS: {
+    STT: '/v1/transcribe',    // STT endpoint (for when ready)
+    TTS: '/tts/generate',     // Your TTS generation endpoint
+    VOICE_PROCESS: '/v1voice-chatn',
   },
 
   // TTS Configuration optimized for your service

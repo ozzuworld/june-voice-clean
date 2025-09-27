@@ -16,10 +16,11 @@ const APP_CONFIG = {
   },
 
   // API Endpoints - Updated to match your service API    CHAT: '/v1/co    CHAT: '/v1/chconversation // Your orchestrator endpointSSSS
-    API_ENDPOINTS: {
-    STT: '/v1/transcribe',    // STT endpoint (for when ready)
-    TTS: '/tts/generate',     // Your TTS generation endpoint
-    VOICE_PROCESS: '/v1voice-chatn',
+  API_ENDPOINTS: {
+    STT: '/v1/transcribe',
+    TTS: '/tts/generate',
+    VOICE_PROCESS: '/v1/voice-process',
+    CHAT: '/v1/chat/conversation',   // ← Add the correct chat path here
   },
 
   // TTS Configuration optimized for your service

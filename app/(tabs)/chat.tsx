@@ -1,18 +1,44 @@
-// app/(tabs)/chat.tsx - ENHANCED with voice input button
-import { useState, useRef } from 'react';
-import { TouchableOpacity, Animated } from 'react-native';
+// app/(tabs)/chat.tsx - Fixed version
+import React, { useState, useRef } from 'react';
+import {
+  View,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  FlatList,
+  SafeAreaView,
+  KeyboardAvoidingView,
+  Platform,
+  StyleSheet,
+  ActivityIndicator,
+} from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { useVoiceChat } from '@/hooks/useVoiceChat'; // NEW import
+import { useVoiceChat } from '@/hooks/useVoiceChat';
+import { useColorScheme } from '@/hooks/useColorScheme';
+import { ThemedText } from '@/components/ThemedText';
+import { ThemedView } from '@/components/ThemedView';
+import { Colors } from '@/constants/Colors';
+import { ChatMessage } from '@/components/ChatMessage';
+
+interface Message {
+  id: string;
+  text: string;
+  isUser: boolean;
+  timestamp: Date;
+}
 
 export default function ChatScreen() {
+  const colorScheme = useColorScheme();
+  const [inputText, setInputText] = useState('');
+  const flatListRef = useRef<FlatList>(null);
+  
   const { 
-    // Existing chat functionality
     messages, 
     sendMessage: sendTextMessage, 
     isLoading: isChatLoading,
     clearChat, 
     isPlayingAudio,
-    // NEW: Voice functionality
+    // Voice functionality
     isVoiceMode,
     isListening,
     isProcessing,
@@ -23,9 +49,19 @@ export default function ChatScreen() {
     lastVoiceTranscript
   } = useVoiceChat();
 
-  // ... existing state and functions ...
+  // Handle sending text message
+  const handleSendMessage = async () => {
+    if (!inputText.trim() || isChatLoading) return;
+    
+    try {
+      await sendTextMessage(inputText.trim());
+      setInputText('');
+    } catch (error) {
+      console.error('Failed to send message:', error);
+    }
+  };
 
-  // NEW: Handle voice recording
+  // Handle voice recording
   const handleVoicePress = async () => {
     try {
       if (isListening) {
@@ -40,7 +76,39 @@ export default function ChatScreen() {
     }
   };
 
-  // NEW: Enhanced input area with voice button
+  // Render individual message
+  const renderMessage = ({ item }: { item: Message }) => (
+    <ChatMessage message={item} />
+  );
+
+  // Render empty state
+  const renderEmptyState = () => (
+    <View style={styles.emptyState}>
+      <ThemedText style={styles.emptyTitle}>Welcome to OZZU Chat</ThemedText>
+      <ThemedText style={styles.emptySubtitle}>
+        Start a conversation by typing a message or using voice input
+      </ThemedText>
+    </View>
+  );
+
+  // Render header
+  const renderHeader = () => (
+    <ThemedView style={styles.header}>
+      <ThemedText style={styles.headerTitle}>OZZU</ThemedText>
+      <TouchableOpacity
+        onPress={clearChat}
+        style={styles.clearButton}
+      >
+        <Ionicons 
+          name="trash-outline" 
+          size={20} 
+          color={Colors[colorScheme ?? 'light'].textSecondary} 
+        />
+      </TouchableOpacity>
+    </ThemedView>
+  );
+
+  // Enhanced input area with voice button
   const renderInputArea = () => (
     <KeyboardAvoidingView 
       behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
@@ -82,13 +150,13 @@ export default function ChatScreen() {
                 }
               ]}
             >
-              <Animated.View style={styles.voiceButtonContent}>
+              <View style={styles.voiceButtonContent}>
                 <Ionicons 
                   name={isListening ? "stop" : "mic"} 
                   size={24} 
                   color="white" 
                 />
-              </Animated.View>
+              </View>
             </TouchableOpacity>
           ) : (
             // Text Input Mode
@@ -98,16 +166,16 @@ export default function ChatScreen() {
                   styles.textInput,
                   {
                     color: Colors[colorScheme ?? 'light'].text,
-                    backgroundColor: Colors[colorScheme ?? 'light'].backgroundSecondary,
+                    backgroundColor: Colors[colorScheme ?? 'light'].backgroundSecondary || '#1a1a1a',
                     borderColor: inputText.trim() 
                       ? Colors[colorScheme ?? 'light'].primary 
-                      : Colors[colorScheme ?? 'light'].border,
+                      : Colors[colorScheme ?? 'light'].border || '#333',
                   }
                 ]}
                 value={inputText}
                 onChangeText={setInputText}
                 placeholder="Message OZZU..."
-                placeholderTextColor={Colors[colorScheme ?? 'light'].textSecondary}
+                placeholderTextColor={Colors[colorScheme ?? 'light'].textSecondary || '#666'}
                 multiline
                 maxLength={1000}
                 editable={!isChatLoading}
@@ -122,14 +190,14 @@ export default function ChatScreen() {
                   {
                     backgroundColor: inputText.trim() && !isChatLoading 
                       ? Colors[colorScheme ?? 'light'].primary 
-                      : Colors[colorScheme ?? 'light'].border,
+                      : Colors[colorScheme ?? 'light'].border || '#333',
                   }
                 ]}
               >
                 <Ionicons 
                   name={isChatLoading ? "hourglass" : "send"} 
                   size={20} 
-                  color={inputText.trim() && !isChatLoading ? 'white' : Colors[colorScheme ?? 'light'].textSecondary}
+                  color={inputText.trim() && !isChatLoading ? 'white' : Colors[colorScheme ?? 'light'].textSecondary || '#666'}
                 />
               </TouchableOpacity>
             </>
@@ -159,7 +227,8 @@ export default function ChatScreen() {
 
   return (
     <SafeAreaView style={[styles.container, { backgroundColor: Colors[colorScheme ?? 'light'].background }]}>
-      {/* ... existing header ... */}
+      {/* Header */}
+      {renderHeader()}
       
       {/* Messages */}
       <FlatList
@@ -182,8 +251,63 @@ export default function ChatScreen() {
   );
 }
 
-// NEW: Additional styles for voice integration
-const additionalStyles = StyleSheet.create({
+const styles = StyleSheet.create({
+  container: {
+    flex: 1,
+  },
+  header: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingHorizontal: 20,
+    paddingVertical: 15,
+    borderBottomWidth: 1,
+    borderBottomColor: '#333',
+  },
+  headerTitle: {
+    fontSize: 24,
+    fontWeight: 'bold',
+    color: '#667eea',
+  },
+  clearButton: {
+    padding: 8,
+  },
+  messagesList: {
+    flex: 1,
+  },
+  messagesContent: {
+    paddingHorizontal: 16,
+  },
+  emptyMessagesContent: {
+    flexGrow: 1,
+    justifyContent: 'center',
+  },
+  emptyState: {
+    alignItems: 'center',
+    paddingVertical: 40,
+  },
+  emptyTitle: {
+    fontSize: 20,
+    fontWeight: 'bold',
+    marginBottom: 8,
+  },
+  emptySubtitle: {
+    fontSize: 16,
+    textAlign: 'center',
+    opacity: 0.7,
+    paddingHorizontal: 40,
+  },
+  inputContainer: {
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    borderTopWidth: 1,
+    borderTopColor: '#333',
+  },
+  inputWrapper: {
+    flexDirection: 'row',
+    alignItems: 'flex-end',
+    gap: 8,
+  },
   voiceModeToggle: {
     width: 40,
     height: 40,
@@ -191,7 +315,15 @@ const additionalStyles = StyleSheet.create({
     borderWidth: 2,
     justifyContent: 'center',
     alignItems: 'center',
-    marginRight: 8,
+  },
+  textInput: {
+    flex: 1,
+    borderWidth: 1,
+    borderRadius: 20,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    maxHeight: 100,
+    fontSize: 16,
   },
   voiceButton: {
     flex: 1,

@@ -1,149 +1,166 @@
-// app/(tabs)/chat.tsx - Updated to show audio state
-import { useEffect, useRef, useState } from 'react';
-import {
-  FlatList,
-  KeyboardAvoidingView,
-  Platform,
-  SafeAreaView,
-  StyleSheet,
-  TextInput,
-  View,
-  Animated,
-  TouchableOpacity,
-} from 'react-native';
-
-import { Button } from '@/components/ui/Button';
-import { ChatMessage } from '@/components/ChatMessage';
-import { ThemedText } from '@/components/ThemedText';
-import { ThemedView } from '@/components/ThemedView';
-import { Colors } from '@/constants/Colors';
-import { useAuth } from '@/hooks/useAuth';
-import { useChat } from '@/hooks/useChat';
-import { useColorScheme } from '@/hooks/useColorScheme';
-
-// Updated Message type to include audio
-type Message = {
-  id: string;
-  text: string;
-  isUser: boolean;
-  timestamp: Date;
-  status?: 'sending' | 'sent' | 'error';
-  isVoice?: boolean;
-  hasAudio?: boolean;
-};
+// app/(tabs)/chat.tsx - ENHANCED with voice input button
+import { useState, useRef } from 'react';
+import { TouchableOpacity, Animated } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
+import { useVoiceChat } from '@/hooks/useVoiceChat'; // NEW import
 
 export default function ChatScreen() {
-  const colorScheme = useColorScheme();
-  const { user, signOut } = useAuth();
-  const { messages, sendMessage, isLoading, clearChat, isPlayingAudio } = useChat(); // Added isPlayingAudio
-  const [inputText, setInputText] = useState('');
-  const [audioEnabled, setAudioEnabled] = useState(true); // NEW: Toggle for audio
-  const flatListRef = useRef<FlatList>(null);
-  const fadeAnim = useRef(new Animated.Value(0)).current;
+  const { 
+    // Existing chat functionality
+    messages, 
+    sendMessage: sendTextMessage, 
+    isLoading: isChatLoading,
+    clearChat, 
+    isPlayingAudio,
+    // NEW: Voice functionality
+    isVoiceMode,
+    isListening,
+    isProcessing,
+    startListening,
+    stopListening,
+    sendVoiceMessage,
+    toggleVoiceMode,
+    lastVoiceTranscript
+  } = useVoiceChat();
 
-  useEffect(() => {
-    Animated.timing(fadeAnim, {
-      toValue: 1,
-      duration: 600,
-      useNativeDriver: true,
-    }).start();
-  }, []);
+  // ... existing state and functions ...
 
-  const scrollToBottom = () => {
-    setTimeout(() => {
-      flatListRef.current?.scrollToEnd({ animated: true });
-    }, 100);
+  // NEW: Handle voice recording
+  const handleVoicePress = async () => {
+    try {
+      if (isListening) {
+        console.log('🛑 Stopping voice recording');
+        await stopListening();
+      } else if (!isProcessing && !isChatLoading) {
+        console.log('🎤 Starting voice recording');
+        await startListening();
+      }
+    } catch (error) {
+      console.error('Voice recording error:', error);
+    }
   };
 
-  useEffect(() => {
-    scrollToBottom();
-  }, [messages]);
+  // NEW: Enhanced input area with voice button
+  const renderInputArea = () => (
+    <KeyboardAvoidingView 
+      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+      keyboardVerticalOffset={Platform.OS === 'ios' ? 90 : 0}
+    >
+      <ThemedView style={styles.inputContainer}>
+        <ThemedView style={styles.inputWrapper}>
+          {/* Voice Mode Toggle */}
+          <TouchableOpacity
+            onPress={toggleVoiceMode}
+            style={[
+              styles.voiceModeToggle,
+              {
+                backgroundColor: isVoiceMode 
+                  ? Colors[colorScheme ?? 'light'].primary 
+                  : 'transparent',
+                borderColor: Colors[colorScheme ?? 'light'].primary,
+              }
+            ]}
+          >
+            <Ionicons 
+              name={isVoiceMode ? "mic" : "mic-outline"} 
+              size={20} 
+              color={isVoiceMode ? 'white' : Colors[colorScheme ?? 'light'].primary} 
+            />
+          </TouchableOpacity>
 
-  const handleSendMessage = async () => {
-    if (!inputText.trim() || isLoading) return;
+          {isVoiceMode ? (
+            // Voice Input Mode
+            <TouchableOpacity
+              onPress={handleVoicePress}
+              disabled={isProcessing || isChatLoading}
+              style={[
+                styles.voiceButton,
+                {
+                  backgroundColor: isListening 
+                    ? '#ff4757' 
+                    : Colors[colorScheme ?? 'light'].primary,
+                }
+              ]}
+            >
+              <Animated.View style={styles.voiceButtonContent}>
+                <Ionicons 
+                  name={isListening ? "stop" : "mic"} 
+                  size={24} 
+                  color="white" 
+                />
+              </Animated.View>
+            </TouchableOpacity>
+          ) : (
+            // Text Input Mode
+            <>
+              <TextInput
+                style={[
+                  styles.textInput,
+                  {
+                    color: Colors[colorScheme ?? 'light'].text,
+                    backgroundColor: Colors[colorScheme ?? 'light'].backgroundSecondary,
+                    borderColor: inputText.trim() 
+                      ? Colors[colorScheme ?? 'light'].primary 
+                      : Colors[colorScheme ?? 'light'].border,
+                  }
+                ]}
+                value={inputText}
+                onChangeText={setInputText}
+                placeholder="Message OZZU..."
+                placeholderTextColor={Colors[colorScheme ?? 'light'].textSecondary}
+                multiline
+                maxLength={1000}
+                editable={!isChatLoading}
+                onSubmitEditing={handleSendMessage}
+              />
+              
+              <TouchableOpacity
+                onPress={handleSendMessage}
+                disabled={!inputText.trim() || isChatLoading}
+                style={[
+                  styles.sendButton,
+                  {
+                    backgroundColor: inputText.trim() && !isChatLoading 
+                      ? Colors[colorScheme ?? 'light'].primary 
+                      : Colors[colorScheme ?? 'light'].border,
+                  }
+                ]}
+              >
+                <Ionicons 
+                  name={isChatLoading ? "hourglass" : "send"} 
+                  size={20} 
+                  color={inputText.trim() && !isChatLoading ? 'white' : Colors[colorScheme ?? 'light'].textSecondary}
+                />
+              </TouchableOpacity>
+            </>
+          )}
+        </ThemedView>
 
-    const messageText = inputText.trim();
-    setInputText('');
-    
-    // Pass audioEnabled state to sendMessage
-    await sendMessage(messageText, audioEnabled);
-    scrollToBottom();
-  };
+        {/* Voice Status Indicator */}
+        {(isListening || isProcessing) && (
+          <ThemedView style={styles.voiceStatus}>
+            <ThemedText style={styles.voiceStatusText}>
+              {isListening ? '🎤 Listening...' : '⏳ Processing voice...'}
+            </ThemedText>
+          </ThemedView>
+        )}
 
-  const renderMessage = ({ item }: { item: Message }) => (
-    <ChatMessage 
-      message={item} 
-      isPlayingAudio={isPlayingAudio && item.hasAudio} 
-    />
-  );
-
-  const renderEmptyState = () => (
-    <Animated.View style={[styles.emptyState, { opacity: fadeAnim }]}>
-      <View style={styles.emptyIconContainer}>
-        <ThemedText style={styles.emptyIcon}>💭</ThemedText>
-      </View>
-      <ThemedText style={styles.emptyTitle}>Start a conversation</ThemedText>
-      <ThemedText style={styles.emptySubtitle}>
-        Ask me anything or just say hello!
-      </ThemedText>
-    </Animated.View>
+        {/* Last Transcription Display */}
+        {lastVoiceTranscript && (
+          <ThemedView style={styles.transcriptionPreview}>
+            <ThemedText style={styles.transcriptionText}>
+              You said: "{lastVoiceTranscript}"
+            </ThemedText>
+          </ThemedView>
+        )}
+      </ThemedView>
+    </KeyboardAvoidingView>
   );
 
   return (
     <SafeAreaView style={[styles.container, { backgroundColor: Colors[colorScheme ?? 'light'].background }]}>
-      {/* Enhanced Header */}
-      <ThemedView style={styles.header}>
-        <ThemedView style={styles.headerLeft}>
-          <ThemedView style={styles.avatarContainer}>
-            <ThemedText style={styles.avatarText}>O</ThemedText>
-          </ThemedView>
-          <ThemedView>
-            <ThemedText style={styles.headerTitle}>OZZU</ThemedText>
-            <ThemedText style={styles.headerSubtitle}>
-              {user?.name ? `Chat with ${user.name}` : 'Your AI Assistant'}
-            </ThemedText>
-          </ThemedView>
-        </ThemedView>
-        
-        <ThemedView style={styles.headerActions}>
-          {/* NEW: Audio toggle button */}
-          <TouchableOpacity 
-            onPress={() => setAudioEnabled(!audioEnabled)} 
-            style={[styles.audioToggle, { 
-              backgroundColor: audioEnabled ? Colors[colorScheme ?? 'light'].primary : 'transparent',
-              borderColor: Colors[colorScheme ?? 'light'].primary 
-            }]}
-          >
-            <ThemedText style={[styles.audioToggleText, { 
-              color: audioEnabled ? 'white' : Colors[colorScheme ?? 'light'].primary 
-            }]}>
-              {audioEnabled ? '🔊' : '🔇'}
-            </ThemedText>
-          </TouchableOpacity>
-          
-          {messages.length > 0 && (
-            <TouchableOpacity onPress={clearChat} style={styles.clearButton}>
-              <ThemedText style={styles.clearButtonText}>Clear</ThemedText>
-            </TouchableOpacity>
-          )}
-          <Button
-            title="Sign Out"
-            onPress={signOut}
-            variant="secondary"
-            size="small"
-          />
-        </ThemedView>
-      </ThemedView>
-
-      {/* Audio Status Indicator */}
-      {isPlayingAudio && (
-        <ThemedView style={styles.audioStatusBar}>
-          <ThemedText style={styles.audioStatusText}>
-            🔊 Playing audio response...
-          </ThemedText>
-        </ThemedView>
-      )}
-
+      {/* ... existing header ... */}
+      
       {/* Messages */}
       <FlatList
         ref={flatListRef}
@@ -159,211 +176,64 @@ export default function ChatScreen() {
         ListEmptyComponent={renderEmptyState}
       />
 
-      {/* Enhanced Input Area */}
-      <KeyboardAvoidingView 
-        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-        keyboardVerticalOffset={Platform.OS === 'ios' ? 90 : 0}
-      >
-        <ThemedView style={styles.inputContainer}>
-          <ThemedView style={styles.inputWrapper}>
-            <TextInput
-              style={[
-                styles.textInput,
-                {
-                  color: Colors[colorScheme ?? 'light'].text,
-                  backgroundColor: Colors[colorScheme ?? 'light'].backgroundSecondary,
-                  borderColor: inputText.trim() ? Colors[colorScheme ?? 'light'].primary : Colors[colorScheme ?? 'light'].border,
-                }
-              ]}
-              value={inputText}
-              onChangeText={setInputText}
-              placeholder="Message OZZU..."
-              placeholderTextColor={Colors[colorScheme ?? 'light'].textSecondary}
-              multiline
-              maxLength={1000}
-              editable={!isLoading}
-              onSubmitEditing={handleSendMessage}
-              blurOnSubmit={false}
-            />
-            
-            <TouchableOpacity
-              onPress={handleSendMessage}
-              disabled={!inputText.trim() || isLoading}
-              style={[
-                styles.sendButtonCircle,
-                {
-                  backgroundColor: inputText.trim() && !isLoading 
-                    ? Colors[colorScheme ?? 'light'].primary 
-                    : Colors[colorScheme ?? 'light'].border,
-                }
-              ]}
-            >
-              <ThemedText style={[
-                styles.sendIcon,
-                { color: inputText.trim() && !isLoading ? '#fff' : Colors[colorScheme ?? 'light'].textSecondary }
-              ]}>
-                {isLoading ? '⏳' : '↗'}
-              </ThemedText>
-            </TouchableOpacity>
-          </ThemedView>
-        </ThemedView>
-      </KeyboardAvoidingView>
+      {/* Enhanced Input Area with Voice */}
+      {renderInputArea()}
     </SafeAreaView>
   );
 }
 
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-  },
-  header: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingHorizontal: 20,
-    paddingVertical: 15,
-    borderBottomWidth: 1,
-    borderBottomColor: '#e9ecef',
-  },
-  headerLeft: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    flex: 1,
-  },
-  avatarContainer: {
+// NEW: Additional styles for voice integration
+const additionalStyles = StyleSheet.create({
+  voiceModeToggle: {
     width: 40,
     height: 40,
     borderRadius: 20,
-    backgroundColor: '#667eea',
+    borderWidth: 2,
     justifyContent: 'center',
     alignItems: 'center',
-    marginRight: 12,
+    marginRight: 8,
   },
-  avatarText: {
-    fontSize: 18,
-    fontWeight: 'bold',
-    color: '#fff',
+  voiceButton: {
+    flex: 1,
+    height: 50,
+    borderRadius: 25,
+    justifyContent: 'center',
+    alignItems: 'center',
   },
-  headerTitle: {
-    fontSize: 18,
-    fontWeight: '600',
-    letterSpacing: 1,
-  },
-  headerSubtitle: {
-    fontSize: 12,
-    opacity: 0.7,
-  },
-  headerActions: {
+  voiceButtonContent: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 8,
+    justifyContent: 'center',
   },
-  // NEW: Audio toggle button styles
-  audioToggle: {
-    paddingHorizontal: 8,
-    paddingVertical: 6,
-    borderRadius: 12,
-    borderWidth: 1,
-    minWidth: 36,
+  sendButton: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    justifyContent: 'center',
     alignItems: 'center',
   },
-  audioToggleText: {
-    fontSize: 14,
-    fontWeight: '600',
-  },
-  clearButton: {
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 12,
-    backgroundColor: 'transparent',
-  },
-  clearButtonText: {
-    fontSize: 14,
-    opacity: 0.6,
-  },
-  // NEW: Audio status bar styles
-  audioStatusBar: {
+  voiceStatus: {
     paddingHorizontal: 16,
     paddingVertical: 8,
     backgroundColor: 'rgba(102, 126, 234, 0.1)',
-    borderBottomWidth: 1,
-    borderBottomColor: 'rgba(102, 126, 234, 0.2)',
+    borderRadius: 8,
+    marginTop: 8,
   },
-  audioStatusText: {
+  voiceStatusText: {
     fontSize: 14,
     color: '#667eea',
     textAlign: 'center',
-    fontWeight: '500',
   },
-  messagesList: {
-    flex: 1,
-  },
-  messagesContent: {
+  transcriptionPreview: {
     paddingHorizontal: 16,
-    paddingVertical: 20,
+    paddingVertical: 8,
+    backgroundColor: 'rgba(0, 0, 0, 0.05)',
+    borderRadius: 8,
+    marginTop: 8,
   },
-  emptyMessagesContent: {
-    flexGrow: 1,
-    justifyContent: 'center',
-  },
-  emptyState: {
-    alignItems: 'center',
-    paddingHorizontal: 40,
-  },
-  emptyIconContainer: {
-    width: 80,
-    height: 80,
-    borderRadius: 40,
-    backgroundColor: 'rgba(102, 126, 234, 0.1)',
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginBottom: 20,
-  },
-  emptyIcon: {
-    fontSize: 32,
-  },
-  emptyTitle: {
-    fontSize: 20,
-    fontWeight: '600',
-    marginBottom: 8,
-    textAlign: 'center',
-  },
-  emptySubtitle: {
-    fontSize: 16,
-    opacity: 0.6,
-    textAlign: 'center',
-    lineHeight: 22,
-  },
-  inputContainer: {
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    borderTopWidth: 1,
-    borderTopColor: '#e9ecef',
-  },
-  inputWrapper: {
-    flexDirection: 'row',
-    alignItems: 'flex-end',
-    gap: 8,
-  },
-  textInput: {
-    flex: 1,
-    borderWidth: 2,
-    borderRadius: 24,
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    maxHeight: 100,
-    fontSize: 16,
-    lineHeight: 20,
-  },
-  sendButtonCircle: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  sendIcon: {
-    fontSize: 18,
-    fontWeight: 'bold',
+  transcriptionText: {
+    fontSize: 12,
+    fontStyle: 'italic',
+    opacity: 0.7,
   },
 });

@@ -34,16 +34,24 @@ const APP_CONFIG = {
   // Timeouts optimized for your services
   TIMEOUTS: {
     STT: 15000,   // 15 seconds
-    TTS: 10000,   // 10 seconds for your TTS service
-    CHAT: 20000,  // 20 seconds for orchestrator
-    VOICE: 30000, // 30 seconds for full voice processing
+    TTS: 30000,   // 10 seconds for your TTS service
+    CHAT: 45000,  // 20 seconds for orchestrator
+    VOICE: 60000, // 30 seconds for full voice processing
   },
 
   // Debug flags
   DEBUG: {
-    SKIP_STT: true, // Set to true while STT is under construction
+    SKIP_STT: false, // ✅ CHANGED: Enable STT integration
     VERBOSE_LOGS: true,
     MOCK_RESPONSES: false,
+  },
+
+  // Add STT-specific configuration
+  STT: {
+    SUPPORTED_FORMATS: ['m4a', 'wav', 'mp3'],
+    MAX_DURATION_MS: 300000, // 5 minutes
+    AUTO_DETECT_LANGUAGE: true,
+    DEFAULT_LANGUAGE: 'en',
   },
 } as const;
 

@@ -127,8 +127,12 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
       console.log('💬 Sending message with audio support:', trimmedText);
       console.log('🔗 Endpoint:', `${APP_CONFIG.SERVICES.orchestrator}${APP_CONFIG.ENDPOINTS.CHAT}`);
       
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), APP_CONFIG.TIMEOUTS.CHAT);
+      // In sendMessage function, around line 95:
+const controller = new AbortController();
+const timeoutId = setTimeout(() => {
+  console.log('⏰ Request timeout - TTS processing takes time...');
+  controller.abort();
+}, APP_CONFIG.TIMEOUTS.CHAT); // Now 45 seconds
 
       // ✅ FIXED: Include audio request
       const response = await fetch(`${APP_CONFIG.SERVICES.orchestrator}${APP_CONFIG.ENDPOINTS.CHAT}`, {

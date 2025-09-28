@@ -1,5 +1,5 @@
-// app/(tabs)/chat.tsx - Fixed version
-import React, { useState, useRef } from 'react';
+// app/(tabs)/chat.tsx - Simple, crash-free version
+import React, { useState } from 'react';
 import {
   View,
   Text,
@@ -13,13 +13,11 @@ import {
   ActivityIndicator,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { useVoiceChat } from '@/hooks/useVoiceChat';
+import { useAuth } from '@/hooks/useAuth';
 import { useColorScheme } from '@/hooks/useColorScheme';
-import { ThemedText } from '@/components/ThemedText';
-import { ThemedView } from '@/components/ThemedView';
 import { Colors } from '@/constants/Colors';
-import { ChatMessage } from '@/components/ChatMessage';
 
+// Simple message interface
 interface Message {
   id: string;
   text: string;
@@ -29,224 +27,185 @@ interface Message {
 
 export default function ChatScreen() {
   const colorScheme = useColorScheme();
+  const { user, signOut } = useAuth();
   const [inputText, setInputText] = useState('');
-  const flatListRef = useRef<FlatList>(null);
-  
-  const { 
-    messages, 
-    sendMessage: sendTextMessage, 
-    isLoading: isChatLoading,
-    clearChat, 
-    isPlayingAudio,
-    // Voice functionality
-    isVoiceMode,
-    isListening,
-    isProcessing,
-    startListening,
-    stopListening,
-    sendVoiceMessage,
-    toggleVoiceMode,
-    lastVoiceTranscript
-  } = useVoiceChat();
+  const [messages, setMessages] = useState<Message[]>([]);
+  const [isLoading, setIsLoading] = useState(false);
 
-  // Handle sending text message
+  // Simple message sending
   const handleSendMessage = async () => {
-    if (!inputText.trim() || isChatLoading) return;
+    if (!inputText.trim() || isLoading) return;
     
-    try {
-      await sendTextMessage(inputText.trim());
-      setInputText('');
-    } catch (error) {
-      console.error('Failed to send message:', error);
-    }
+    const userMessage: Message = {
+      id: Date.now().toString(),
+      text: inputText.trim(),
+      isUser: true,
+      timestamp: new Date(),
+    };
+
+    // Add user message immediately
+    setMessages(prev => [...prev, userMessage]);
+    setInputText('');
+    setIsLoading(true);
+
+    // Simulate bot response (replace with real API call later)
+    setTimeout(() => {
+      const botMessage: Message = {
+        id: (Date.now() + 1).toString(),
+        text: `I received your message: "${userMessage.text}". This is a test response.`,
+        isUser: false,
+        timestamp: new Date(),
+      };
+      setMessages(prev => [...prev, botMessage]);
+      setIsLoading(false);
+    }, 1000);
   };
 
-  // Handle voice recording
-  const handleVoicePress = async () => {
-    try {
-      if (isListening) {
-        console.log('🛑 Stopping voice recording');
-        await stopListening();
-      } else if (!isProcessing && !isChatLoading) {
-        console.log('🎤 Starting voice recording');
-        await startListening();
-      }
-    } catch (error) {
-      console.error('Voice recording error:', error);
-    }
+  // Clear all messages
+  const clearChat = () => {
+    setMessages([]);
   };
 
   // Render individual message
   const renderMessage = ({ item }: { item: Message }) => (
-    <ChatMessage message={item} />
+    <View style={[
+      styles.messageContainer,
+      item.isUser ? styles.userMessage : styles.botMessage
+    ]}>
+      <View style={[
+        styles.messageBubble,
+        {
+          backgroundColor: item.isUser 
+            ? Colors[colorScheme ?? 'light'].primary 
+            : Colors[colorScheme ?? 'light'].backgroundSecondary || '#1a1a1a'
+        }
+      ]}>
+        <Text style={[
+          styles.messageText,
+          { color: item.isUser ? 'white' : Colors[colorScheme ?? 'light'].text }
+        ]}>
+          {item.text}
+        </Text>
+      </View>
+      <Text style={[styles.timestamp, { color: Colors[colorScheme ?? 'light'].textSecondary || '#666' }]}>
+        {item.timestamp.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+      </Text>
+    </View>
   );
 
   // Render empty state
   const renderEmptyState = () => (
     <View style={styles.emptyState}>
-      <ThemedText style={styles.emptyTitle}>Welcome to OZZU Chat</ThemedText>
-      <ThemedText style={styles.emptySubtitle}>
-        Start a conversation by typing a message or using voice input
-      </ThemedText>
+      <Text style={[styles.emptyTitle, { color: Colors[colorScheme ?? 'light'].text }]}>
+        Welcome to OZZU Chat
+      </Text>
+      <Text style={[styles.emptySubtitle, { color: Colors[colorScheme ?? 'light'].textSecondary || '#666' }]}>
+        Start a conversation by typing a message below
+      </Text>
     </View>
-  );
-
-  // Render header
-  const renderHeader = () => (
-    <ThemedView style={styles.header}>
-      <ThemedText style={styles.headerTitle}>OZZU</ThemedText>
-      <TouchableOpacity
-        onPress={clearChat}
-        style={styles.clearButton}
-      >
-        <Ionicons 
-          name="trash-outline" 
-          size={20} 
-          color={Colors[colorScheme ?? 'light'].textSecondary} 
-        />
-      </TouchableOpacity>
-    </ThemedView>
-  );
-
-  // Enhanced input area with voice button
-  const renderInputArea = () => (
-    <KeyboardAvoidingView 
-      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-      keyboardVerticalOffset={Platform.OS === 'ios' ? 90 : 0}
-    >
-      <ThemedView style={styles.inputContainer}>
-        <ThemedView style={styles.inputWrapper}>
-          {/* Voice Mode Toggle */}
-          <TouchableOpacity
-            onPress={toggleVoiceMode}
-            style={[
-              styles.voiceModeToggle,
-              {
-                backgroundColor: isVoiceMode 
-                  ? Colors[colorScheme ?? 'light'].primary 
-                  : 'transparent',
-                borderColor: Colors[colorScheme ?? 'light'].primary,
-              }
-            ]}
-          >
-            <Ionicons 
-              name={isVoiceMode ? "mic" : "mic-outline"} 
-              size={20} 
-              color={isVoiceMode ? 'white' : Colors[colorScheme ?? 'light'].primary} 
-            />
-          </TouchableOpacity>
-
-          {isVoiceMode ? (
-            // Voice Input Mode
-            <TouchableOpacity
-              onPress={handleVoicePress}
-              disabled={isProcessing || isChatLoading}
-              style={[
-                styles.voiceButton,
-                {
-                  backgroundColor: isListening 
-                    ? '#ff4757' 
-                    : Colors[colorScheme ?? 'light'].primary,
-                }
-              ]}
-            >
-              <View style={styles.voiceButtonContent}>
-                <Ionicons 
-                  name={isListening ? "stop" : "mic"} 
-                  size={24} 
-                  color="white" 
-                />
-              </View>
-            </TouchableOpacity>
-          ) : (
-            // Text Input Mode
-            <>
-              <TextInput
-                style={[
-                  styles.textInput,
-                  {
-                    color: Colors[colorScheme ?? 'light'].text,
-                    backgroundColor: Colors[colorScheme ?? 'light'].backgroundSecondary || '#1a1a1a',
-                    borderColor: inputText.trim() 
-                      ? Colors[colorScheme ?? 'light'].primary 
-                      : Colors[colorScheme ?? 'light'].border || '#333',
-                  }
-                ]}
-                value={inputText}
-                onChangeText={setInputText}
-                placeholder="Message OZZU..."
-                placeholderTextColor={Colors[colorScheme ?? 'light'].textSecondary || '#666'}
-                multiline
-                maxLength={1000}
-                editable={!isChatLoading}
-                onSubmitEditing={handleSendMessage}
-              />
-              
-              <TouchableOpacity
-                onPress={handleSendMessage}
-                disabled={!inputText.trim() || isChatLoading}
-                style={[
-                  styles.sendButton,
-                  {
-                    backgroundColor: inputText.trim() && !isChatLoading 
-                      ? Colors[colorScheme ?? 'light'].primary 
-                      : Colors[colorScheme ?? 'light'].border || '#333',
-                  }
-                ]}
-              >
-                <Ionicons 
-                  name={isChatLoading ? "hourglass" : "send"} 
-                  size={20} 
-                  color={inputText.trim() && !isChatLoading ? 'white' : Colors[colorScheme ?? 'light'].textSecondary || '#666'}
-                />
-              </TouchableOpacity>
-            </>
-          )}
-        </ThemedView>
-
-        {/* Voice Status Indicator */}
-        {(isListening || isProcessing) && (
-          <ThemedView style={styles.voiceStatus}>
-            <ThemedText style={styles.voiceStatusText}>
-              {isListening ? '🎤 Listening...' : '⏳ Processing voice...'}
-            </ThemedText>
-          </ThemedView>
-        )}
-
-        {/* Last Transcription Display */}
-        {lastVoiceTranscript && (
-          <ThemedView style={styles.transcriptionPreview}>
-            <ThemedText style={styles.transcriptionText}>
-              You said: "{lastVoiceTranscript}"
-            </ThemedText>
-          </ThemedView>
-        )}
-      </ThemedView>
-    </KeyboardAvoidingView>
   );
 
   return (
     <SafeAreaView style={[styles.container, { backgroundColor: Colors[colorScheme ?? 'light'].background }]}>
       {/* Header */}
-      {renderHeader()}
+      <View style={[styles.header, { borderBottomColor: Colors[colorScheme ?? 'light'].border || '#333' }]}>
+        <Text style={[styles.headerTitle, { color: Colors[colorScheme ?? 'light'].primary }]}>
+          OZZU
+        </Text>
+        <View style={styles.headerButtons}>
+          <TouchableOpacity onPress={clearChat} style={styles.headerButton}>
+            <Ionicons 
+              name="trash-outline" 
+              size={20} 
+              color={Colors[colorScheme ?? 'light'].textSecondary || '#666'} 
+            />
+          </TouchableOpacity>
+          <TouchableOpacity onPress={signOut} style={styles.headerButton}>
+            <Ionicons 
+              name="log-out-outline" 
+              size={20} 
+              color={Colors[colorScheme ?? 'light'].textSecondary || '#666'} 
+            />
+          </TouchableOpacity>
+        </View>
+      </View>
+
+      {/* User info */}
+      {user && (
+        <View style={[styles.userInfo, { backgroundColor: Colors[colorScheme ?? 'light'].backgroundSecondary || '#1a1a1a' }]}>
+          <Text style={[styles.userInfoText, { color: Colors[colorScheme ?? 'light'].textSecondary || '#666' }]}>
+            Logged in as: {user.email || user.username || 'Unknown'}
+          </Text>
+        </View>
+      )}
       
       {/* Messages */}
       <FlatList
-        ref={flatListRef}
-        data={messages}
+        data={messages || []} // Safe fallback
         keyExtractor={(item) => item.id}
         renderItem={renderMessage}
         style={styles.messagesList}
         contentContainerStyle={[
           styles.messagesContent,
-          messages.length === 0 && styles.emptyMessagesContent
+          (messages?.length || 0) === 0 && styles.emptyMessagesContent
         ]}
         showsVerticalScrollIndicator={false}
         ListEmptyComponent={renderEmptyState}
       />
 
-      {/* Enhanced Input Area with Voice */}
-      {renderInputArea()}
+      {/* Input Area */}
+      <KeyboardAvoidingView 
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        keyboardVerticalOffset={Platform.OS === 'ios' ? 90 : 0}
+      >
+        <View style={[styles.inputContainer, { borderTopColor: Colors[colorScheme ?? 'light'].border || '#333' }]}>
+          <View style={styles.inputWrapper}>
+            <TextInput
+              style={[
+                styles.textInput,
+                {
+                  color: Colors[colorScheme ?? 'light'].text,
+                  backgroundColor: Colors[colorScheme ?? 'light'].backgroundSecondary || '#1a1a1a',
+                  borderColor: inputText.trim() 
+                    ? Colors[colorScheme ?? 'light'].primary 
+                    : Colors[colorScheme ?? 'light'].border || '#333',
+                }
+              ]}
+              value={inputText}
+              onChangeText={setInputText}
+              placeholder="Message OZZU..."
+              placeholderTextColor={Colors[colorScheme ?? 'light'].textSecondary || '#666'}
+              multiline
+              maxLength={1000}
+              editable={!isLoading}
+              onSubmitEditing={handleSendMessage}
+            />
+            
+            <TouchableOpacity
+              onPress={handleSendMessage}
+              disabled={!inputText.trim() || isLoading}
+              style={[
+                styles.sendButton,
+                {
+                  backgroundColor: inputText.trim() && !isLoading 
+                    ? Colors[colorScheme ?? 'light'].primary 
+                    : Colors[colorScheme ?? 'light'].border || '#333',
+                }
+              ]}
+            >
+              {isLoading ? (
+                <ActivityIndicator size="small" color="white" />
+              ) : (
+                <Ionicons 
+                  name="send" 
+                  size={20} 
+                  color={inputText.trim() && !isLoading ? 'white' : Colors[colorScheme ?? 'light'].textSecondary || '#666'}
+                />
+              )}
+            </TouchableOpacity>
+          </View>
+        </View>
+      </KeyboardAvoidingView>
     </SafeAreaView>
   );
 }
@@ -262,21 +221,31 @@ const styles = StyleSheet.create({
     paddingHorizontal: 20,
     paddingVertical: 15,
     borderBottomWidth: 1,
-    borderBottomColor: '#333',
   },
   headerTitle: {
     fontSize: 24,
     fontWeight: 'bold',
-    color: '#667eea',
   },
-  clearButton: {
+  headerButtons: {
+    flexDirection: 'row',
+    gap: 10,
+  },
+  headerButton: {
     padding: 8,
+  },
+  userInfo: {
+    paddingHorizontal: 20,
+    paddingVertical: 8,
+  },
+  userInfoText: {
+    fontSize: 12,
   },
   messagesList: {
     flex: 1,
   },
   messagesContent: {
     paddingHorizontal: 16,
+    paddingVertical: 10,
   },
   emptyMessagesContent: {
     flexGrow: 1,
@@ -297,24 +266,39 @@ const styles = StyleSheet.create({
     opacity: 0.7,
     paddingHorizontal: 40,
   },
+  messageContainer: {
+    marginBottom: 16,
+    maxWidth: '85%',
+  },
+  userMessage: {
+    alignSelf: 'flex-end',
+  },
+  botMessage: {
+    alignSelf: 'flex-start',
+  },
+  messageBubble: {
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    borderRadius: 20,
+    marginBottom: 4,
+  },
+  messageText: {
+    fontSize: 16,
+    lineHeight: 20,
+  },
+  timestamp: {
+    fontSize: 11,
+    textAlign: 'center',
+  },
   inputContainer: {
     paddingHorizontal: 16,
     paddingVertical: 12,
     borderTopWidth: 1,
-    borderTopColor: '#333',
   },
   inputWrapper: {
     flexDirection: 'row',
     alignItems: 'flex-end',
     gap: 8,
-  },
-  voiceModeToggle: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    borderWidth: 2,
-    justifyContent: 'center',
-    alignItems: 'center',
   },
   textInput: {
     flex: 1,
@@ -325,47 +309,11 @@ const styles = StyleSheet.create({
     maxHeight: 100,
     fontSize: 16,
   },
-  voiceButton: {
-    flex: 1,
-    height: 50,
-    borderRadius: 25,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  voiceButtonContent: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
   sendButton: {
     width: 40,
     height: 40,
     borderRadius: 20,
     justifyContent: 'center',
     alignItems: 'center',
-  },
-  voiceStatus: {
-    paddingHorizontal: 16,
-    paddingVertical: 8,
-    backgroundColor: 'rgba(102, 126, 234, 0.1)',
-    borderRadius: 8,
-    marginTop: 8,
-  },
-  voiceStatusText: {
-    fontSize: 14,
-    color: '#667eea',
-    textAlign: 'center',
-  },
-  transcriptionPreview: {
-    paddingHorizontal: 16,
-    paddingVertical: 8,
-    backgroundColor: 'rgba(0, 0, 0, 0.05)',
-    borderRadius: 8,
-    marginTop: 8,
-  },
-  transcriptionText: {
-    fontSize: 12,
-    fontStyle: 'italic',
-    opacity: 0.7,
   },
 });

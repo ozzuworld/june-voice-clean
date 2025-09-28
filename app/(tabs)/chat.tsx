@@ -1,4 +1,4 @@
-// app/(tabs)/chat.tsx - FIXED: Import useChat from the real hooks file
+// app/(tabs)/chat.tsx - Updated to show audio state
 import { useEffect, useRef, useState } from 'react';
 import {
   FlatList,
@@ -18,19 +18,29 @@ import { ThemedText } from '@/components/ThemedText';
 import { ThemedView } from '@/components/ThemedView';
 import { Colors } from '@/constants/Colors';
 import { useAuth } from '@/hooks/useAuth';
-import { useChat } from '@/hooks/useChat'; // ← FIXED: Import from the real hooks file
+import { useChat } from '@/hooks/useChat';
 import { useColorScheme } from '@/hooks/useColorScheme';
-import type { Message } from '@/types/chat.types';
+
+// Updated Message type to include audio
+type Message = {
+  id: string;
+  text: string;
+  isUser: boolean;
+  timestamp: Date;
+  status?: 'sending' | 'sent' | 'error';
+  isVoice?: boolean;
+  hasAudio?: boolean;
+};
 
 export default function ChatScreen() {
   const colorScheme = useColorScheme();
   const { user, signOut } = useAuth();
-  const { messages, sendMessage, isLoading, clearChat } = useChat(); // ← Now using REAL chat provider
+  const { messages, sendMessage, isLoading, clearChat, isPlayingAudio } = useChat(); // Added isPlayingAudio
   const [inputText, setInputText] = useState('');
+  const [audioEnabled, setAudioEnabled] = useState(true); // NEW: Toggle for audio
   const flatListRef = useRef<FlatList>(null);
   const fadeAnim = useRef(new Animated.Value(0)).current;
 
-  // ... rest of your component stays the same
   useEffect(() => {
     Animated.timing(fadeAnim, {
       toValue: 1,
@@ -55,12 +65,16 @@ export default function ChatScreen() {
     const messageText = inputText.trim();
     setInputText('');
     
-    await sendMessage(messageText);
+    // Pass audioEnabled state to sendMessage
+    await sendMessage(messageText, audioEnabled);
     scrollToBottom();
   };
 
   const renderMessage = ({ item }: { item: Message }) => (
-    <ChatMessage message={item} />
+    <ChatMessage 
+      message={item} 
+      isPlayingAudio={isPlayingAudio && item.hasAudio} 
+    />
   );
 
   const renderEmptyState = () => (
@@ -92,6 +106,21 @@ export default function ChatScreen() {
         </ThemedView>
         
         <ThemedView style={styles.headerActions}>
+          {/* NEW: Audio toggle button */}
+          <TouchableOpacity 
+            onPress={() => setAudioEnabled(!audioEnabled)} 
+            style={[styles.audioToggle, { 
+              backgroundColor: audioEnabled ? Colors[colorScheme ?? 'light'].primary : 'transparent',
+              borderColor: Colors[colorScheme ?? 'light'].primary 
+            }]}
+          >
+            <ThemedText style={[styles.audioToggleText, { 
+              color: audioEnabled ? 'white' : Colors[colorScheme ?? 'light'].primary 
+            }]}>
+              {audioEnabled ? '🔊' : '🔇'}
+            </ThemedText>
+          </TouchableOpacity>
+          
           {messages.length > 0 && (
             <TouchableOpacity onPress={clearChat} style={styles.clearButton}>
               <ThemedText style={styles.clearButtonText}>Clear</ThemedText>
@@ -105,6 +134,15 @@ export default function ChatScreen() {
           />
         </ThemedView>
       </ThemedView>
+
+      {/* Audio Status Indicator */}
+      {isPlayingAudio && (
+        <ThemedView style={styles.audioStatusBar}>
+          <ThemedText style={styles.audioStatusText}>
+            🔊 Playing audio response...
+          </ThemedText>
+        </ThemedView>
+      )}
 
       {/* Messages */}
       <FlatList
@@ -220,6 +258,19 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 8,
   },
+  // NEW: Audio toggle button styles
+  audioToggle: {
+    paddingHorizontal: 8,
+    paddingVertical: 6,
+    borderRadius: 12,
+    borderWidth: 1,
+    minWidth: 36,
+    alignItems: 'center',
+  },
+  audioToggleText: {
+    fontSize: 14,
+    fontWeight: '600',
+  },
   clearButton: {
     paddingHorizontal: 12,
     paddingVertical: 6,
@@ -229,6 +280,20 @@ const styles = StyleSheet.create({
   clearButtonText: {
     fontSize: 14,
     opacity: 0.6,
+  },
+  // NEW: Audio status bar styles
+  audioStatusBar: {
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    backgroundColor: 'rgba(102, 126, 234, 0.1)',
+    borderBottomWidth: 1,
+    borderBottomColor: 'rgba(102, 126, 234, 0.2)',
+  },
+  audioStatusText: {
+    fontSize: 14,
+    color: '#667eea',
+    textAlign: 'center',
+    fontWeight: '500',
   },
   messagesList: {
     flex: 1,

@@ -1,4 +1,4 @@
-// config/app.config.ts - Updated for your real deployed services
+// config/app.config.ts - CORRECTED to match actual backend endpoints
 const APP_CONFIG = {
   KEYCLOAK_URL: 'https://idp.allsafe.world',
   KEYCLOAK: {
@@ -15,12 +15,12 @@ const APP_CONFIG = {
     idp: 'https://idp.allsafe.world',
   },
 
-  // API Endpoints - Updated to match your service API    CHAT: '/v1/co    CHAT: '/v1/chconversation // Your orchestrator endpointSSSS
-  API_ENDPOINTS: {
-    STT: '/v1/transcribe',
-    TTS: '/tts/generate',
+  // ✅ CORRECTED: Match actual backend endpoints
+  ENDPOINTS: {
+    CHAT: '/v1/chat',             // ✅ FIXED: This matches your orchestrator backend
+    STT: '/v1/transcribe',        // STT endpoint (for when ready)
+    TTS: '/tts/generate',         // Your TTS generation endpoint
     VOICE_PROCESS: '/v1/voice-process',
-    CHAT: '/v1/chat/conversation',   // ← Add the correct chat path here
   },
 
   // TTS Configuration optimized for your service

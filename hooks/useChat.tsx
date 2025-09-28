@@ -1,5 +1,7 @@
-// hooks/useChat.tsx - SIMPLIFIED for clean orchestrator
+// hooks/useChat.tsx - FIXED: Added audio support
 import React, { createContext, useCallback, useContext, useState } from 'react';
+import { Audio } from 'expo-av';
+import * as FileSystem from 'expo-file-system';
 import { useAuth } from './useAuth';
 import APP_CONFIG from '@/config/app.config';
 
@@ -10,16 +12,18 @@ interface Message {
   timestamp: Date;
   status?: 'sending' | 'sent' | 'error';
   isVoice?: boolean;
+  hasAudio?: boolean; // ✅ NEW: Track if message has audio
 }
 
 interface ChatState {
   messages: Message[];
   isLoading: boolean;
   error: string | null;
+  isPlayingAudio: boolean; // ✅ NEW: Track audio playback state
 }
 
 interface ChatContextType extends ChatState {
-  sendMessage: (text: string) => Promise<void>;
+  sendMessage: (text: string, includeAudio?: boolean) => Promise<void>;
   clearChat: () => void;
   clearError: () => void;
 }
@@ -32,9 +36,67 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
     messages: [],
     isLoading: false,
     error: null,
+    isPlayingAudio: false,
   });
 
-  const sendMessage = useCallback(async (text: string) => {
+  // ✅ NEW: Setup audio mode for better compatibility
+  const setupAudioMode = useCallback(async () => {
+    try {
+      await Audio.setAudioModeAsync({
+        allowsRecordingIOS: false,
+        playsInSilentModeIOS: true,
+        shouldDuckAndroid: true,
+        playThroughEarpieceAndroid: false,
+        staysActiveInBackground: false,
+      });
+    } catch (error) {
+      console.warn('Failed to setup audio mode:', error);
+    }
+  }, []);
+
+  // ✅ NEW: Play audio from base64 data
+  const playAudioFromBase64 = useCallback(async (audioBase64: string, messageId: string) => {
+    try {
+      setState(prev => ({ ...prev, isPlayingAudio: true }));
+      
+      // Setup audio mode
+      await setupAudioMode();
+      
+      // Decode base64 and save to temp file
+      const audioPath = `${FileSystem.cacheDirectory}chat_audio_${messageId}.wav`;
+      await FileSystem.writeAsStringAsync(audioPath, audioBase64, {
+        encoding: FileSystem.EncodingType.Base64,
+      });
+      
+      // Play the audio
+      const { sound } = await Audio.Sound.createAsync(
+        { uri: audioPath },
+        { shouldPlay: true, volume: 1.0 }
+      );
+      
+      // Monitor playback
+      sound.setOnPlaybackStatusUpdate((status) => {
+        if (status.isLoaded && status.didJustFinish) {
+          setState(prev => ({ ...prev, isPlayingAudio: false }));
+          sound.unloadAsync();
+          FileSystem.deleteAsync(audioPath, { idempotent: true });
+        }
+        
+        if (status.isLoaded && status.error) {
+          console.error('Audio playback error:', status.error);
+          setState(prev => ({ ...prev, isPlayingAudio: false }));
+        }
+      });
+      
+      console.log('✅ Audio playback started for message:', messageId);
+      
+    } catch (error) {
+      console.error('❌ Audio playback failed:', error);
+      setState(prev => ({ ...prev, isPlayingAudio: false }));
+    }
+  }, [setupAudioMode]);
+
+  const sendMessage = useCallback(async (text: string, includeAudio: boolean = true) => {
     if (!accessToken) {
       setState(prev => ({ ...prev, error: 'Not authenticated' }));
       return;
@@ -62,13 +124,13 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
     }));
 
     try {
-      console.log('💬 Sending message to clean orchestrator:', trimmedText);
+      console.log('💬 Sending message with audio support:', trimmedText);
       console.log('🔗 Endpoint:', `${APP_CONFIG.SERVICES.orchestrator}${APP_CONFIG.ENDPOINTS.CHAT}`);
       
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), APP_CONFIG.TIMEOUTS.CHAT);
 
-      // ✅ SIMPLIFIED PAYLOAD - matches clean orchestrator
+      // ✅ FIXED: Include audio request
       const response = await fetch(`${APP_CONFIG.SERVICES.orchestrator}${APP_CONFIG.ENDPOINTS.CHAT}`, {
         method: 'POST',
         headers: {
@@ -78,6 +140,12 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
         body: JSON.stringify({
           text: trimmedText,
           language: 'en',
+          include_audio: includeAudio, // ✅ NEW: Request audio from backend
+          audio_config: {
+            voice: 'default',
+            speed: 1.0,
+            language: 'EN'
+          },
           metadata: {
             session_id: `session_${Date.now()}`,
             platform: 'mobile',
@@ -110,11 +178,11 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
         status: 'sent',
       };
 
-      // ✅ SIMPLIFIED RESPONSE HANDLING
+      // ✅ ENHANCED: Handle response with audio
       let responseText = '';
+      let hasAudio = false;
       
       if (data.ok && data.message && data.message.text) {
-        // Clean orchestrator returns: { ok: true, message: { text: "...", role: "assistant" } }
         responseText = data.message.text;
       } else if (data.message) {
         responseText = typeof data.message === 'string' ? data.message : JSON.stringify(data.message);
@@ -133,6 +201,7 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
         isUser: false,
         timestamp: new Date(),
         status: 'sent',
+        hasAudio: hasAudio,
       };
 
       setState(prev => ({
@@ -140,6 +209,25 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
         messages: [...prev.messages.slice(0, -1), sentUserMessage, botMessage],
         isLoading: false,
       }));
+
+      // ✅ NEW: Play audio if available
+      if (data.audio && data.audio.data) {
+        console.log('🔊 Audio received, playing...');
+        hasAudio = true;
+        
+        // Update the bot message to indicate it has audio
+        setState(prev => ({
+          ...prev,
+          messages: prev.messages.map(msg => 
+            msg.id === botMessage.id ? { ...msg, hasAudio: true } : msg
+          ),
+        }));
+        
+        // Play the audio
+        await playAudioFromBase64(data.audio.data, botMessage.id);
+      } else {
+        console.log('ℹ️ No audio in response');
+      }
 
       console.log('✅ Message exchange completed successfully');
 
@@ -173,7 +261,7 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
         error: errorMessage,
       }));
     }
-  }, [accessToken]);
+  }, [accessToken, playAudioFromBase64]);
 
   const clearChat = useCallback(() => {
     setState(prev => ({ ...prev, messages: [], error: null }));

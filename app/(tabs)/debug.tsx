@@ -1,49 +1,36 @@
-// app/(tabs)/debug.tsx - Enhanced debug screen for testing services
+// app/(tabs)/debug.tsx - PRODUCTION VERSION (Minimal debugging only)
 import React, { useState } from 'react';
 import { SafeAreaView, ScrollView, StyleSheet, Alert } from 'react-native';
 import { ThemedView } from '@/components/ThemedView';
 import { ThemedText } from '@/components/ThemedText';
 import { Button } from '@/components/ui/Button';
-import { AndroidAudioTest } from '@/components/AndroidAudioTest';
 import { useAuth } from '@/hooks/useAuth';
 import APP_CONFIG from '@/config/app.config';
 
-interface TestResult {
+interface ServiceStatus {
   service: string;
-  status: 'pending' | 'success' | 'error';
+  status: 'success' | 'error' | 'pending';
   message: string;
   responseTime?: number;
 }
 
 export default function DebugScreen() {
-  const { accessToken, isAuthenticated } = useAuth();
-  const [testResults, setTestResults] = useState<TestResult[]>([]);
-  const [isRunning, setIsRunning] = useState(false);
+  const { accessToken, isAuthenticated, user } = useAuth();
+  const [serviceStatuses, setServiceStatuses] = useState<ServiceStatus[]>([]);
+  const [isTestingServices, setIsTestingServices] = useState(false);
 
-  const addResult = (result: TestResult) => {
-    setTestResults(prev => [...prev, result]);
-  };
-
-  const clearResults = () => {
-    setTestResults([]);
-  };
-
-  const testService = async (
-    serviceName: string,
-    endpoint: string,
-    method: 'GET' | 'POST' = 'POST',
-    body?: any
-  ) => {
+  const testService = async (serviceName: string, url: string, method: 'GET' | 'POST' = 'GET', body?: any) => {
     const startTime = Date.now();
     
-    addResult({
+    // Add pending status
+    setServiceStatuses(prev => [...prev, {
       service: serviceName,
       status: 'pending',
-      message: 'Testing...',
-    });
+      message: 'Testing...'
+    }]);
 
     try {
-      const response = await fetch(endpoint, {
+      const response = await fetch(url, {
         method,
         headers: {
           'Authorization': `Bearer ${accessToken}`,
@@ -54,149 +41,69 @@ export default function DebugScreen() {
 
       const responseTime = Date.now() - startTime;
       
-      if (response.ok) {
-        const responseText = await response.text();
-        let displayMessage = `✅ Connected (${response.status})`;
-        
-        // Try to parse JSON response for better debugging
-        try {
-          const jsonResponse = JSON.parse(responseText);
-          if (jsonResponse.message && jsonResponse.message.text) {
-            displayMessage += ` - Response: "${jsonResponse.message.text.substring(0, 50)}..."`;
-          } else if (jsonResponse.status) {
-            displayMessage += ` - Status: ${jsonResponse.status}`;
-          }
-        } catch (e) {
-          // Not JSON, that's fine
-        }
-        
-        addResult({
-          service: serviceName,
-          status: 'success',
-          message: displayMessage,
-          responseTime,
-        });
-      } else {
-        const errorText = await response.text();
-        addResult({
-          service: serviceName,
-          status: 'error',
-          message: `❌ Failed: ${response.status} ${response.statusText} - ${errorText.substring(0, 100)}`,
-          responseTime,
-        });
-      }
+      // Update status
+      setServiceStatuses(prev => prev.map(status => 
+        status.service === serviceName && status.status === 'pending'
+          ? {
+              service: serviceName,
+              status: response.ok ? 'success' : 'error',
+              message: response.ok 
+                ? `✅ Online (${response.status})` 
+                : `❌ Error ${response.status}`,
+              responseTime
+            }
+          : status
+      ));
+
     } catch (error: any) {
       const responseTime = Date.now() - startTime;
-      addResult({
-        service: serviceName,
-        status: 'error',
-        message: `❌ Error: ${error.message}`,
-        responseTime,
-      });
+      
+      setServiceStatuses(prev => prev.map(status => 
+        status.service === serviceName && status.status === 'pending'
+          ? {
+              service: serviceName,
+              status: 'error',
+              message: `❌ ${error.message}`,
+              responseTime
+            }
+          : status
+      ));
     }
   };
 
-  const runAllTests = async () => {
-    if (!isAuthenticated || !accessToken) {
-      Alert.alert('Not Authenticated', 'Please sign in first');
+  const runServiceTests = async () => {
+    if (!isAuthenticated) {
+      Alert.alert('Authentication Required', 'Please sign in first');
       return;
     }
 
-    setIsRunning(true);
-    clearResults();
+    setIsTestingServices(true);
+    setServiceStatuses([]);
 
-    // Test Orchestrator Health Check
-    await testService(
-      'Orchestrator Health',
-      `${APP_CONFIG.SERVICES.orchestrator}/healthz`,
-      'GET'
-    );
+    // Test core services
+    await testService('Orchestrator', `${APP_CONFIG.SERVICES.orchestrator}/healthz`);
+    await testService('TTS Service', `${APP_CONFIG.SERVICES.tts}/health`);
+    await testService('STT Service', `${APP_CONFIG.SERVICES.stt}/health`);
 
-    // Test Debug Routes endpoint
+    // Test chat endpoint
     await testService(
-      'Orchestrator Routes',
-      `${APP_CONFIG.SERVICES.orchestrator}/debug/routes`,
-      'GET'
-    );
-
-    // Test Orchestrator Chat with enhanced router payload format
-    await testService(
-      'Orchestrator Chat',
+      'Chat Endpoint', 
       `${APP_CONFIG.SERVICES.orchestrator}${APP_CONFIG.ENDPOINTS.CHAT}`,
       'POST',
       {
-        text: 'Hello, this is a debug test from the mobile app',
-        language: 'en',
-        voice_id: 'default',
-        include_audio: false,  // ✅ NEW: Disable audio for testing
-        speed: 1.0,
-        extra_extra_metadata: {  // ✅ FIXED: Use correct field name
-          session_id: `debug_${Date.now()}`,
-          platform: 'mobile_debug',
-          test_mode: true,
-        }
+        text: 'Health check',
+        metadata: { test: true }
       }
     );
 
-    // Test STT (if you have a health check endpoint)
-    await testService(
-      'STT Service Health',
-      `${APP_CONFIG.SERVICES.stt}/health`,
-      'GET'
-    );
-
-    // Test TTS (if you have a health check endpoint)  
-    await testService(
-      'TTS Service Health',
-      `${APP_CONFIG.SERVICES.tts}/health`,
-      'GET'
-    );
-
-    // Test TTS generation
-    await testService(
-      'TTS Generation',
-      `${APP_CONFIG.SERVICES.tts}${APP_CONFIG.ENDPOINTS.TTS}`,
-      'POST',
-      {
-        text: 'Hello, this is a test from the debug screen',
-        voice: APP_CONFIG.TTS.DEFAULT_VOICE,
-        speed: APP_CONFIG.TTS.DEFAULT_SPEED,
-        audio_encoding: APP_CONFIG.TTS.DEFAULT_ENCODING,
-      }
-    );
-
-    setIsRunning(false);
+    setIsTestingServices(false);
   };
 
-  const testChatOnly = async () => {
-    if (!isAuthenticated || !accessToken) {
-      Alert.alert('Not Authenticated', 'Please sign in first');
-      return;
-    }
-
-    setIsRunning(true);
-    await testService(
-      'Orchestrator Chat Test',
-      `${APP_CONFIG.SERVICES.orchestrator}${APP_CONFIG.ENDPOINTS.CHAT}`,
-      'POST',
-      { 
-        text: 'Hello from debug screen, please respond with a short greeting',
-        language: 'en',
-        voice_id: 'default',
-        include_audio: false,  // ✅ Disable audio for testing
-        speed: 1.0,
-        extra_extra_metadata: {  // ✅ FIXED: Use correct field name
-          mode: 'debug',
-          platform: 'mobile',
-          timestamp: Date.now(),
-          test_type: 'chat_only',
-        }
-      }
-    );
-    setIsRunning(false);
+  const clearResults = () => {
+    setServiceStatuses([]);
   };
 
-  const getResultColor = (status: TestResult['status']) => {
+  const getStatusColor = (status: ServiceStatus['status']) => {
     switch (status) {
       case 'success': return '#28a745';
       case 'error': return '#dc3545';
@@ -207,7 +114,7 @@ export default function DebugScreen() {
   return (
     <SafeAreaView style={styles.container}>
       <ScrollView contentContainerStyle={styles.content}>
-        <ThemedText style={styles.title}>🔧 Debug & Test Services</ThemedText>
+        <ThemedText style={styles.title}>System Status</ThemedText>
         
         {/* Authentication Status */}
         <ThemedView style={styles.section}>
@@ -218,9 +125,9 @@ export default function DebugScreen() {
           ]}>
             {isAuthenticated ? '✅ Authenticated' : '❌ Not Authenticated'}
           </ThemedText>
-          {accessToken && (
-            <ThemedText style={styles.tokenPreview}>
-              Token: {accessToken.substring(0, 20)}...
+          {user && (
+            <ThemedText style={styles.userInfo}>
+              User: {user.email || user.username || 'Unknown'}
             </ThemedText>
           )}
         </ThemedView>
@@ -232,65 +139,54 @@ export default function DebugScreen() {
             Orchestrator: {APP_CONFIG.SERVICES.orchestrator}
           </ThemedText>
           <ThemedText style={styles.configText}>
-            Chat Endpoint: {APP_CONFIG.ENDPOINTS.CHAT}
+            TTS: {APP_CONFIG.SERVICES.tts}
           </ThemedText>
           <ThemedText style={styles.configText}>
             STT: {APP_CONFIG.SERVICES.stt}
           </ThemedText>
-          <ThemedText style={styles.configText}>
-            TTS: {APP_CONFIG.SERVICES.tts}
-          </ThemedText>
         </ThemedView>
 
-        {/* Test Controls */}
+        {/* Service Tests */}
         <ThemedView style={styles.section}>
-          <ThemedText style={styles.sectionTitle}>Service Tests</ThemedText>
+          <ThemedText style={styles.sectionTitle}>Service Health Check</ThemedText>
           
           <Button
-            title="Test All Services"
-            onPress={runAllTests}
-            loading={isRunning}
+            title={isTestingServices ? 'Testing Services...' : 'Test All Services'}
+            onPress={runServiceTests}
+            loading={isTestingServices}
             disabled={!isAuthenticated}
             style={styles.button}
           />
           
-          <Button
-            title="Test Chat Only"
-            onPress={testChatOnly}
-            loading={isRunning}
-            disabled={!isAuthenticated}
-            variant="secondary"
-            style={styles.button}
-          />
-          
-          <Button
-            title="Clear Results"
-            onPress={clearResults}
-            variant="danger"
-            size="small"
-            disabled={testResults.length === 0}
-            style={styles.button}
-          />
+          {serviceStatuses.length > 0 && (
+            <Button
+              title="Clear Results"
+              onPress={clearResults}
+              variant="secondary"
+              size="small"
+              style={styles.button}
+            />
+          )}
         </ThemedView>
 
-        {/* Test Results */}
-        {testResults.length > 0 && (
+        {/* Service Status Results */}
+        {serviceStatuses.length > 0 && (
           <ThemedView style={styles.section}>
-            <ThemedText style={styles.sectionTitle}>Test Results</ThemedText>
-            {testResults.map((result, index) => (
-              <ThemedView key={index} style={styles.resultItem}>
+            <ThemedText style={styles.sectionTitle}>Service Status</ThemedText>
+            {serviceStatuses.map((status, index) => (
+              <ThemedView key={index} style={styles.statusItem}>
                 <ThemedText style={[
-                  styles.resultService,
-                  { color: getResultColor(result.status) }
+                  styles.serviceName,
+                  { color: getStatusColor(status.status) }
                 ]}>
-                  {result.service}
+                  {status.service}
                 </ThemedText>
-                <ThemedText style={styles.resultMessage}>
-                  {result.message}
+                <ThemedText style={styles.statusMessage}>
+                  {status.message}
                 </ThemedText>
-                {result.responseTime && (
-                  <ThemedText style={styles.resultTime}>
-                    {result.responseTime}ms
+                {status.responseTime && (
+                  <ThemedText style={styles.responseTime}>
+                    {status.responseTime}ms
                   </ThemedText>
                 )}
               </ThemedView>
@@ -298,10 +194,24 @@ export default function DebugScreen() {
           </ThemedView>
         )}
 
-        {/* Audio Test Component */}
+        {/* App Information */}
         <ThemedView style={styles.section}>
-          <ThemedText style={styles.sectionTitle}>Audio Test</ThemedText>
-          <AndroidAudioTest />
+          <ThemedText style={styles.sectionTitle}>App Information</ThemedText>
+          <ThemedText style={styles.configText}>
+            Version: 2.0.0 (Production)
+          </ThemedText>
+          <ThemedText style={styles.configText}>
+            Environment: Production
+          </ThemedText>
+          <ThemedText style={styles.configText}>
+            Debug Logs: {APP_CONFIG.DEBUG.VERBOSE_LOGS ? 'Enabled' : 'Disabled'}
+          </ThemedText>
+          <ThemedText style={styles.configText}>
+            TTS Timeout: {APP_CONFIG.TIMEOUTS.TTS}ms
+          </ThemedText>
+          <ThemedText style={styles.configText}>
+            STT Timeout: {APP_CONFIG.TIMEOUTS.STT}ms
+          </ThemedText>
         </ThemedView>
       </ScrollView>
     </SafeAreaView>
@@ -345,10 +255,9 @@ const styles = StyleSheet.create({
     fontWeight: '500',
     marginBottom: 8,
   },
-  tokenPreview: {
+  userInfo: {
     fontSize: 12,
     color: '#666',
-    fontFamily: 'monospace',
   },
   configText: {
     fontSize: 12,
@@ -359,24 +268,24 @@ const styles = StyleSheet.create({
   button: {
     marginBottom: 8,
   },
-  resultItem: {
+  statusItem: {
     borderLeftWidth: 4,
     borderLeftColor: '#667eea',
     paddingLeft: 12,
     marginBottom: 12,
     paddingVertical: 8,
   },
-  resultService: {
+  serviceName: {
     fontSize: 16,
     fontWeight: '600',
     marginBottom: 4,
   },
-  resultMessage: {
+  statusMessage: {
     fontSize: 14,
     color: '#333',
     marginBottom: 2,
   },
-  resultTime: {
+  responseTime: {
     fontSize: 12,
     color: '#666',
   },

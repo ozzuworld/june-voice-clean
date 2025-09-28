@@ -1,55 +1,55 @@
-// config/app.config.ts - CORRECTED to match actual backend endpoints
+// config/app.config.ts - PRODUCTION READY
 const APP_CONFIG = {
   KEYCLOAK_URL: 'https://idp.allsafe.world',
   KEYCLOAK: {
     REALM: 'allsafe', 
     CLIENT_ID: 'june-mobile-app',
   },
-  REDIRECT_SCHEME: 'june', // expo scheme: june://auth/callback
+  REDIRECT_SCHEME: 'june',
 
   SERVICES: {
-    // Use your actual deployed service URLs
     orchestrator: 'https://api.allsafe.world',
-    stt: '142.189.180.177:40275', // Not ready yet, but config is here
-    tts: 'https://tts.allsafe.world', // Your working TTS service
+    stt: 'http://142.189.180.177:40275',
+    tts: 'https://tts.allsafe.world',
     idp: 'https://idp.allsafe.world',
   },
 
-  // ✅ CORRECTED: Match actual backend endpoints
   ENDPOINTS: {
-    CHAT: '/v1/chat',             // ✅ FIXED: This matches your orchestrator backend
-    STT: '/v1/transcribe',        // STT endpoint (for when ready)
-    TTS: '/tts/generate',         // Your TTS generation endpoint
+    CHAT: '/v1/chat',
+    STT: '/v1/transcribe',
+    TTS: '/tts/generate',
     VOICE_PROCESS: '/v1/voice-process',
   },
 
-  // TTS Configuration optimized for your service
+  // Production TTS Configuration
   TTS: {
     DEFAULT_VOICE: 'default',
     DEFAULT_SPEED: 1.0,
     DEFAULT_ENCODING: 'WAV',
     QUALITY: 'high',
+    MAX_TEXT_LENGTH: 1000, // Increased for production
+    CHUNK_SIZE: 200,
   },
 
-  // Timeouts optimized for your services
+  // Production Timeouts - Conservative values
   TIMEOUTS: {
-    STT: 15000,   // 15 seconds
-    TTS: 30000,   // 10 seconds for your TTS service
-    CHAT: 45000,  // 20 seconds for orchestrator
-    VOICE: 60000, // 30 seconds for full voice processing
+    STT: 30000,   // 30 seconds
+    TTS: 90000,   // 90 seconds
+    CHAT: 60000,  // 60 seconds
+    VOICE: 120000, // 2 minutes for full voice processing
   },
 
-  // Debug flags
+  // Production settings - All debugging disabled
   DEBUG: {
-    SKIP_STT: false, // ✅ CHANGED: Enable STT integration
-    VERBOSE_LOGS: true,
+    SKIP_STT: false,
+    VERBOSE_LOGS: false, // Disabled for production
     MOCK_RESPONSES: false,
+    TTS_FALLBACK: true, // Keep fallback for reliability
   },
 
-  // Add STT-specific configuration
   STT: {
     SUPPORTED_FORMATS: ['m4a', 'wav', 'mp3'],
-    MAX_DURATION_MS: 300000, // 5 minutes
+    MAX_DURATION_MS: 300000, // 5 minutes max recording
     AUTO_DETECT_LANGUAGE: true,
     DEFAULT_LANGUAGE: 'en',
   },

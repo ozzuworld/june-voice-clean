@@ -1,4 +1,4 @@
-// hooks/useChat.tsx - FIXED: Added audio support
+// hooks/useChat.tsx - FIXED: Match the working request format
 import React, { createContext, useCallback, useContext, useState } from 'react';
 import { Audio } from 'expo-av';
 import * as FileSystem from 'expo-file-system';
@@ -12,14 +12,14 @@ interface Message {
   timestamp: Date;
   status?: 'sending' | 'sent' | 'error';
   isVoice?: boolean;
-  hasAudio?: boolean; // ✅ NEW: Track if message has audio
+  hasAudio?: boolean;
 }
 
 interface ChatState {
   messages: Message[];
   isLoading: boolean;
   error: string | null;
-  isPlayingAudio: boolean; // ✅ NEW: Track audio playback state
+  isPlayingAudio: boolean;
 }
 
 interface ChatContextType extends ChatState {
@@ -31,7 +31,7 @@ interface ChatContextType extends ChatState {
 const ChatContext = createContext<ChatContextType | null>(null);
 
 export function ChatProvider({ children }: { children: React.ReactNode }) {
-  const { accessToken } = useAuth();
+  const { accessToken, user } = useAuth();
   const [state, setState] = useState<ChatState>({
     messages: [],
     isLoading: false,
@@ -39,7 +39,6 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
     isPlayingAudio: false,
   });
 
-  // ✅ NEW: Setup audio mode for better compatibility
   const setupAudioMode = useCallback(async () => {
     try {
       await Audio.setAudioModeAsync({
@@ -54,27 +53,22 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
     }
   }, []);
 
-  // ✅ NEW: Play audio from base64 data
   const playAudioFromBase64 = useCallback(async (audioBase64: string, messageId: string) => {
     try {
       setState(prev => ({ ...prev, isPlayingAudio: true }));
       
-      // Setup audio mode
       await setupAudioMode();
       
-      // Decode base64 and save to temp file
       const audioPath = `${FileSystem.cacheDirectory}chat_audio_${messageId}.wav`;
       await FileSystem.writeAsStringAsync(audioPath, audioBase64, {
         encoding: FileSystem.EncodingType.Base64,
       });
       
-      // Play the audio
       const { sound } = await Audio.Sound.createAsync(
         { uri: audioPath },
         { shouldPlay: true, volume: 1.0 }
       );
       
-      // Monitor playback
       sound.setOnPlaybackStatusUpdate((status) => {
         if (status.isLoaded && status.didJustFinish) {
           setState(prev => ({ ...prev, isPlayingAudio: false }));
@@ -88,8 +82,6 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
         }
       });
       
-      console.log('✅ Audio playback started for message:', messageId);
-      
     } catch (error) {
       console.error('❌ Audio playback failed:', error);
       setState(prev => ({ ...prev, isPlayingAudio: false }));
@@ -98,7 +90,7 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
 
   const sendMessage = useCallback(async (text: string, includeAudio: boolean = true) => {
     if (!accessToken) {
-      setState(prev => ({ ...prev, error: 'Not authenticated' }));
+      setState(prev => ({ ...prev, error: 'Authentication required' }));
       return;
     }
 
@@ -124,72 +116,65 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
     }));
 
     try {
-      console.log('💬 Sending message with audio support:', trimmedText);
-      console.log('🔗 Endpoint:', `${APP_CONFIG.SERVICES.orchestrator}${APP_CONFIG.ENDPOINTS.CHAT}`);
-      
-      // In sendMessage function, around line 95:
-const controller = new AbortController();
-const timeoutId = setTimeout(() => {
-  console.log('⏰ Request timeout - TTS processing takes time...');
-  controller.abort();
-}, APP_CONFIG.TIMEOUTS.CHAT); // Now 45 seconds
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => {
+        controller.abort();
+      }, APP_CONFIG.TIMEOUTS.CHAT);
 
-      // ✅ FIXED: Include audio request
+      // ✅ FIXED: Use the exact same format that works in PowerShell
+      const requestBody = {
+        text: trimmedText,
+        language: 'en',
+        metadata: {
+          session_id: `session_${Date.now()}`,
+          user_id: user?.id || user?.email || 'mobile_user',
+          platform: 'mobile',
+          ...(includeAudio && { include_audio: true })
+        }
+      };
+
+      console.log('📤 Sending request:', JSON.stringify(requestBody, null, 2));
+
       const response = await fetch(`${APP_CONFIG.SERVICES.orchestrator}${APP_CONFIG.ENDPOINTS.CHAT}`, {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${accessToken}`,
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({
-          text: trimmedText,
-          language: 'en',
-          include_audio: includeAudio, // ✅ NEW: Request audio from backend
-          audio_config: {
-            voice: 'default',
-            speed: 1.0,
-            language: 'EN'
-          },
-          metadata: {
-            session_id: `session_${Date.now()}`,
-            platform: 'mobile',
-            client_version: '2.0.0',
-          }
-        }),
+        body: JSON.stringify(requestBody),
         signal: controller.signal,
       });
 
       clearTimeout(timeoutId);
-      console.log('📨 Chat response status:', response.status);
 
       if (!response.ok) {
-        let errorText = `HTTP ${response.status}`;
+        let errorText = `Request failed: ${response.status}`;
         try {
           const errorData = await response.text();
-          console.error('❌ Chat request failed:', errorData);
+          console.error('❌ Response error:', errorData);
           errorText = errorData || errorText;
         } catch (e) {
-          console.error('❌ Chat request failed with status:', response.status);
+          // Use default error message
         }
-        throw new Error(`Chat request failed: ${errorText}`);
+        throw new Error(errorText);
       }
 
       const data = await response.json();
-      console.log('✅ Chat response received:', data);
+      console.log('📥 Response received:', JSON.stringify(data, null, 2));
 
       const sentUserMessage: Message = {
         ...userMessage,
         status: 'sent',
       };
 
-      // ✅ ENHANCED: Handle response with audio
+      // ✅ FIXED: Handle the exact response format from your working test
       let responseText = '';
       let hasAudio = false;
       
       if (data.ok && data.message && data.message.text) {
         responseText = data.message.text;
-      } else if (data.message) {
-        responseText = typeof data.message === 'string' ? data.message : JSON.stringify(data.message);
+      } else if (data.message?.text) {
+        responseText = data.message.text;
       } else if (data.text) {
         responseText = data.text;
       } else if (typeof data === 'string') {
@@ -214,7 +199,7 @@ const timeoutId = setTimeout(() => {
         isLoading: false,
       }));
 
-      // ✅ NEW: Play audio if available
+      // ✅ Handle audio if present (check the 'audio' field from your test)
       if (data.audio && data.audio.data) {
         console.log('🔊 Audio received, playing...');
         hasAudio = true;
@@ -229,11 +214,20 @@ const timeoutId = setTimeout(() => {
         
         // Play the audio
         await playAudioFromBase64(data.audio.data, botMessage.id);
+      } else if (data.audio && typeof data.audio === 'string') {
+        // Handle if audio is directly a base64 string
+        console.log('🔊 Direct audio string received, playing...');
+        hasAudio = true;
+        setState(prev => ({
+          ...prev,
+          messages: prev.messages.map(msg => 
+            msg.id === botMessage.id ? { ...msg, hasAudio: true } : msg
+          ),
+        }));
+        await playAudioFromBase64(data.audio, botMessage.id);
       } else {
         console.log('ℹ️ No audio in response');
       }
-
-      console.log('✅ Message exchange completed successfully');
 
     } catch (error: any) {
       console.error('💥 Chat error:', error);
@@ -252,7 +246,7 @@ const timeoutId = setTimeout(() => {
 
       const errorBotMessage: Message = {
         id: (Date.now() + 1).toString(),
-        text: `Sorry, I encountered an error: ${errorMessage}`,
+        text: `I apologize, but I encountered an error: ${errorMessage}`,
         isUser: false,
         timestamp: new Date(),
         status: 'error',
@@ -265,7 +259,7 @@ const timeoutId = setTimeout(() => {
         error: errorMessage,
       }));
     }
-  }, [accessToken, playAudioFromBase64]);
+  }, [accessToken, user, playAudioFromBase64]);
 
   const clearChat = useCallback(() => {
     setState(prev => ({ ...prev, messages: [], error: null }));

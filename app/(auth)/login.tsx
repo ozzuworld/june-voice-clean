@@ -1,65 +1,109 @@
-// app/(auth)/login.tsx - Simple clean login screen
-import { useEffect } from 'react';
-import { View, StyleSheet, Alert } from 'react-native';
+// app/(auth)/login.tsx - Enhanced login with better debugging
+import React, { useEffect } from 'react';
+import { View, TouchableOpacity, StyleSheet, Alert } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
+import { useRouter } from 'expo-router';
 import { ThemedText } from '@/components/ThemedText';
 import { ThemedView } from '@/components/ThemedView';
-import { Button } from '@/components/ui/Button';
 import { useAuth } from '@/hooks/useAuth';
 import { Colors } from '@/constants/Colors';
 import { useColorScheme } from '@/hooks/useColorScheme';
 
-export default function Login() {
+export default function LoginScreen() {
+  const { signIn, isLoading, error, isAuthenticated, clearError } = useAuth();
+  const router = useRouter();
   const colorScheme = useColorScheme();
-  const { signIn, isLoading, error, clearError } = useAuth();
   const colors = Colors[colorScheme ?? 'light'];
 
-  // Show error alert
+  // Auto-navigate if already authenticated
   useEffect(() => {
-    if (error) {
-      Alert.alert('Authentication Error', error, [
-        { text: 'OK', onPress: clearError }
-      ]);
+    if (isAuthenticated) {
+      console.log('✅ Already authenticated, redirecting from login...');
+      router.replace('/(tabs)/chat');
     }
-  }, [error, clearError]);
+  }, [isAuthenticated, router]);
+
+  const handleSignIn = async () => {
+    try {
+      console.log('🚀 Starting sign in process...');
+      clearError();
+      await signIn();
+    } catch (err) {
+      console.error('❌ Sign in failed:', err);
+      Alert.alert('Sign In Failed', 'Please try again.');
+    }
+  };
+
+  const handleClearError = () => {
+    clearError();
+  };
 
   return (
-    <ThemedView style={styles.container}>
-      <View style={styles.content}>
-        {/* App Logo/Brand */}
-        <View style={styles.brandContainer}>
-          <ThemedText style={styles.brandText}>OZZU</ThemedText>
-          <ThemedText style={styles.tagline}>AI Voice Assistant</ThemedText>
-        </View>
-
-        {/* Welcome Text */}
-        <View style={styles.welcomeContainer}>
-          <ThemedText style={styles.welcomeTitle}>Welcome</ThemedText>
-          <ThemedText style={styles.welcomeSubtitle}>
-            Sign in to start your conversation
+    <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]}>
+      <ThemedView style={styles.content}>
+        {/* Logo/Title */}
+        <View style={styles.header}>
+          <ThemedText style={[styles.title, { color: colors.primary }]}>
+            OZZU
+          </ThemedText>
+          <ThemedText style={[styles.subtitle, { color: colors.textSecondary }]}>
+            Your AI Voice Assistant
           </ThemedText>
         </View>
 
-        {/* Sign In Button */}
-        <View style={styles.buttonContainer}>
-          <Button
-            title={isLoading ? 'Opening browser...' : 'Sign In'}
-            onPress={signIn}
-            loading={isLoading}
+        {/* Login Section */}
+        <View style={styles.loginSection}>
+          <TouchableOpacity
+            style={[
+              styles.signInButton,
+              { backgroundColor: colors.primary },
+              isLoading && styles.disabledButton
+            ]}
+            onPress={handleSignIn}
             disabled={isLoading}
-            style={styles.signInButton}
-          />
+          >
+            <ThemedText style={styles.signInButtonText}>
+              {isLoading ? 'Signing In...' : 'Sign In with Keycloak'}
+            </ThemedText>
+          </TouchableOpacity>
+
+          {/* Error Display */}
+          {error && (
+            <View style={[styles.errorContainer, { backgroundColor: colors.danger + '20', borderColor: colors.danger }]}>
+              <ThemedText style={[styles.errorText, { color: colors.danger }]}>
+                {error}
+              </ThemedText>
+              <TouchableOpacity onPress={handleClearError} style={styles.clearErrorButton}>
+                <ThemedText style={[styles.clearErrorText, { color: colors.danger }]}>
+                  Dismiss
+                </ThemedText>
+              </TouchableOpacity>
+            </View>
+          )}
         </View>
 
-        {/* Loading State Info */}
-        {isLoading && (
-          <View style={styles.loadingContainer}>
-            <ThemedText style={[styles.loadingText, { color: colors.textSecondary }]}>
-              Complete sign-in in the browser that opened
+        {/* Info Section */}
+        <View style={styles.infoSection}>
+          <ThemedText style={[styles.infoText, { color: colors.textSecondary }]}>
+            Secure authentication powered by Keycloak
+          </ThemedText>
+        </View>
+
+        {/* Debug Info */}
+        {__DEV__ && (
+          <View style={styles.debugSection}>
+            <ThemedText style={[styles.debugText, { color: colors.textSecondary }]}>
+              Debug: Auth={isAuthenticated ? 'true' : 'false'}, Loading={isLoading ? 'true' : 'false'}
             </ThemedText>
+            {error && (
+              <ThemedText style={[styles.debugText, { color: colors.danger }]}>
+                Error: {error}
+              </ThemedText>
+            )}
           </View>
         )}
-      </View>
-    </ThemedView>
+      </ThemedView>
+    </SafeAreaView>
   );
 }
 
@@ -70,71 +114,72 @@ const styles = StyleSheet.create({
   content: {
     flex: 1,
     justifyContent: 'center',
-    alignItems: 'center',
     paddingHorizontal: 32,
-    gap: 32,
+    paddingVertical: 24,
   },
-  brandContainer: {
+  header: {
     alignItems: 'center',
-    marginBottom: 20,
+    marginBottom: 48,
   },
-  brandText: {
+  title: {
     fontSize: 48,
-    fontWeight: '100',
-    letterSpacing: 8,
+    fontWeight: 'bold',
     marginBottom: 8,
   },
-  tagline: {
-    fontSize: 16,
-    opacity: 0.7,
-    letterSpacing: 2,
-  },
-  welcomeContainer: {
-    alignItems: 'center',
-    marginBottom: 20,
-  },
-  welcomeTitle: {
-    fontSize: 32,
-    fontWeight: 'bold',
-    marginBottom: 12,
-  },
-  welcomeSubtitle: {
+  subtitle: {
     fontSize: 18,
     textAlign: 'center',
-    opacity: 0.8,
-    lineHeight: 24,
   },
-  buttonContainer: {
-    width: '100%',
-    maxWidth: 320,
+  loginSection: {
+    marginBottom: 32,
   },
   signInButton: {
     paddingVertical: 16,
-    borderRadius: 12,
+    paddingHorizontal: 32,
+    borderRadius: 25,
+    alignItems: 'center',
+    marginBottom: 16,
+  },
+  disabledButton: {
+    opacity: 0.6,
+  },
+  signInButtonText: {
+    color: 'white',
+    fontSize: 18,
+    fontWeight: '600',
   },
   errorContainer: {
-    width: '100%',
-    maxWidth: 320,
     padding: 16,
+    borderRadius: 8,
     borderWidth: 1,
-    borderRadius: 12,
-    backgroundColor: 'rgba(220, 53, 69, 0.1)',
-    alignItems: 'center',
+    marginTop: 16,
   },
   errorText: {
     fontSize: 14,
-    textAlign: 'center',
-    marginBottom: 12,
-    lineHeight: 20,
+    marginBottom: 8,
   },
-  tryAgainButton: {
-    minWidth: 100,
+  clearErrorButton: {
+    alignSelf: 'flex-end',
   },
-  loadingContainer: {
+  clearErrorText: {
+    fontSize: 12,
+    fontWeight: '600',
+  },
+  infoSection: {
     alignItems: 'center',
   },
-  loadingText: {
+  infoText: {
     fontSize: 14,
     textAlign: 'center',
+  },
+  debugSection: {
+    marginTop: 32,
+    padding: 16,
+    borderRadius: 8,
+    backgroundColor: 'rgba(0,0,0,0.1)',
+  },
+  debugText: {
+    fontSize: 10,
+    marginBottom: 4,
   },
 });

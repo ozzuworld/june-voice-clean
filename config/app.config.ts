@@ -10,7 +10,7 @@ const APP_CONFIG = {
   SERVICES: {
     // Use your actual deployed service URLs
     orchestrator: 'https://api.allsafe.world',
-    stt: 'https://stt.allsafe.world', // Not ready yet, but config is here
+    stt: '142.189.180.177:40275', // Not ready yet, but config is here
     tts: 'https://tts.allsafe.world', // Your working TTS service
     idp: 'https://idp.allsafe.world',
   },

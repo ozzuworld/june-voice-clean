@@ -1,4 +1,4 @@
-// config/app.config.ts - PRODUCTION READY
+// config/app.config.ts - FIXED: Use the working endpoint
 const APP_CONFIG = {
   KEYCLOAK_URL: 'https://idp.allsafe.world',
   KEYCLOAK: {
@@ -15,7 +15,7 @@ const APP_CONFIG = {
   },
 
   ENDPOINTS: {
-    CHAT: '/v1/conversation',
+    CHAT: '/v1/conversation', // FIXED: Use the working endpoint that matches PowerShell test
     STT: '/v1/transcribe',
     TTS: '/tts/generate',
     VOICE_PROCESS: '/v1/voice-process',
@@ -27,7 +27,7 @@ const APP_CONFIG = {
     DEFAULT_SPEED: 1.0,
     DEFAULT_ENCODING: 'WAV',
     QUALITY: 'high',
-    MAX_TEXT_LENGTH: 1000, // Increased for production
+    MAX_TEXT_LENGTH: 1000,
     CHUNK_SIZE: 200,
   },
 

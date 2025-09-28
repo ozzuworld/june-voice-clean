@@ -1,279 +1,291 @@
-// hooks/useAuth.tsx - PRODUCTION VERSION (Clean, no debug logs)
-import React, { createContext, useContext, useEffect, useState, useRef } from 'react';
-import * as WebBrowser from 'expo-web-browser';
-import * as SecureStore from 'expo-secure-store';
-import { makeRedirectUri, useAuthRequest, useAutoDiscovery } from 'expo-auth-session';
-import { decodeJWT } from '@/utils/jwt';
+// hooks/useChat.tsx - FIXED: Match the exact working PowerShell format
+import React, { createContext, useCallback, useContext, useState } from 'react';
+import { Audio } from 'expo-av';
+import * as FileSystem from 'expo-file-system';
+import { useAuth } from './useAuth';
+import APP_CONFIG from '@/config/app.config';
 
-WebBrowser.maybeCompleteAuthSession();
-
-interface User {
+interface Message {
   id: string;
-  name?: string;
-  email?: string;
-  username?: string;
+  text: string;
+  isUser: boolean;
+  timestamp: Date;
+  status?: 'sending' | 'sent' | 'error';
+  isVoice?: boolean;
+  hasAudio?: boolean;
 }
 
-interface AuthContextValue {
-  accessToken: string | null;
-  isAuthenticated: boolean;
+interface ChatState {
+  messages: Message[];
   isLoading: boolean;
-  user: User | null;
-  signIn: () => Promise<void>;
-  signOut: () => Promise<void>;
   error: string | null;
+  isPlayingAudio: boolean;
+}
+
+interface ChatContextType extends ChatState {
+  sendMessage: (text: string, includeAudio?: boolean) => Promise<void>;
+  clearChat: () => void;
   clearError: () => void;
 }
 
-const AuthContext = createContext<AuthContextValue | undefined>(undefined);
+const ChatContext = createContext<ChatContextType | null>(null);
 
-// Keycloak configuration
-const KEYCLOAK_URL = 'https://idp.allsafe.world';
-const REALM = 'allsafe';
-const CLIENT_ID = 'june-mobile-app';
-
-export function AuthProvider({ children }: { children: React.ReactNode }) {
-  const [state, setState] = useState({
-    accessToken: null as string | null,
-    isAuthenticated: false,
-    isLoading: true,
-    user: null as User | null,
-    error: null as string | null,
+export function ChatProvider({ children }: { children: React.ReactNode }) {
+  const { accessToken, user } = useAuth();
+  const [state, setState] = useState<ChatState>({
+    messages: [],
+    isLoading: false,
+    error: null,
+    isPlayingAudio: false,
   });
 
-  // Auto-discover Keycloak endpoints
-  const discovery = useAutoDiscovery(`${KEYCLOAK_URL}/realms/${REALM}`);
-
-  // Create redirect URI
-  const redirectUri = makeRedirectUri({
-    scheme: 'june',
-    path: 'auth/callback',
-  });
-
-  const [request, response, promptAsync] = useAuthRequest(
-    {
-      clientId: CLIENT_ID,
-      scopes: ['openid', 'profile', 'email', 'orchestrator-aud'],
-      redirectUri: redirectUri,
-      responseType: 'code',
-      usePKCE: true,
-    },
-    discovery
-  );
-
-  // Load stored auth on startup
-  useEffect(() => {
-    loadStoredAuth();
+  const setupAudioMode = useCallback(async () => {
+    try {
+      await Audio.setAudioModeAsync({
+        allowsRecordingIOS: false,
+        playsInSilentModeIOS: true,
+        shouldDuckAndroid: true,
+        playThroughEarpieceAndroid: false,
+        staysActiveInBackground: false,
+      });
+    } catch (error) {
+      console.warn('Failed to setup audio mode:', error);
+    }
   }, []);
 
-  // Handle auth response
-  useEffect(() => {
-    if (response) {
-      if (response.type === 'success') {
-        handleAuthSuccess(response.params.code);
-      } else if (response.type === 'error') {
-        console.error('Auth error:', response.params);
-        updateState({
-          error: response.params.error_description || 'Authentication failed',
-          isLoading: false,
-        });
-      } else if (response.type === 'cancel') {
-        updateState({ 
-          error: 'Authentication cancelled',
-          isLoading: false,
-        });
-      }
-    }
-  }, [response]);
-
-  const updateState = (updates: Partial<typeof state>) => {
-    setState(prev => ({ ...prev, ...updates }));
-  };
-
-  const loadStoredAuth = async () => {
+  const playAudioFromBase64 = useCallback(async (audioBase64: string, messageId: string) => {
     try {
-      const token = await SecureStore.getItemAsync('accessToken');
-      const userData = await SecureStore.getItemAsync('userData');
+      setState(prev => ({ ...prev, isPlayingAudio: true }));
       
-      if (token && userData) {
-        const user = JSON.parse(userData);
-        
-        // Validate token before using it
-        const payload = decodeJWT(token);
-        if (!payload || !payload.exp || payload.exp * 1000 < Date.now()) {
-          await clearStoredAuth();
-          updateState({ isLoading: false });
-          return;
+      await setupAudioMode();
+      
+      const audioPath = `${FileSystem.cacheDirectory}chat_audio_${messageId}.wav`;
+      await FileSystem.writeAsStringAsync(audioPath, audioBase64, {
+        encoding: FileSystem.EncodingType.Base64,
+      });
+      
+      const { sound } = await Audio.Sound.createAsync(
+        { uri: audioPath },
+        { shouldPlay: true, volume: 1.0 }
+      );
+      
+      sound.setOnPlaybackStatusUpdate((status) => {
+        if (status.isLoaded && status.didJustFinish) {
+          setState(prev => ({ ...prev, isPlayingAudio: false }));
+          sound.unloadAsync();
+          FileSystem.deleteAsync(audioPath, { idempotent: true });
         }
         
-        updateState({
-          accessToken: token,
-          isAuthenticated: true,
-          user,
-          isLoading: false,
-        });
-      } else {
-        updateState({ isLoading: false });
-      }
-    } catch (error) {
-      console.error('Failed to load stored auth:', error);
-      await clearStoredAuth();
-      updateState({ isLoading: false });
-    }
-  };
-
-  const clearStoredAuth = async () => {
-    try {
-      await SecureStore.deleteItemAsync('accessToken');
-      await SecureStore.deleteItemAsync('userData');
-    } catch (error) {
-      console.error('Error clearing stored auth:', error);
-    }
-  };
-
-  const signIn = async () => {
-    try {
-      if (!request) {
-        updateState({ 
-          error: 'Authentication not ready. Please wait and try again.' 
-        });
-        return;
-      }
-
-      // Clear any existing invalid tokens first
-      await clearStoredAuth();
-      updateState({ 
-        error: null,
-        isAuthenticated: false,
-        accessToken: null,
-        user: null,
-        isLoading: false,
+        if (status.isLoaded && status.error) {
+          console.error('Audio playback error:', status.error);
+          setState(prev => ({ ...prev, isPlayingAudio: false }));
+        }
       });
       
-      // This opens the browser and handles PKCE automatically
-      await promptAsync();
-      
-    } catch (error: any) {
-      console.error('Sign in error:', error);
-      updateState({ 
-        error: error.message || 'Sign in failed',
-        isLoading: false,
-      });
+    } catch (error) {
+      console.error('❌ Audio playback failed:', error);
+      setState(prev => ({ ...prev, isPlayingAudio: false }));
     }
-  };
+  }, [setupAudioMode]);
 
-  const handleAuthSuccess = async (code: string) => {
+  const sendMessage = useCallback(async (text: string, includeAudio: boolean = true) => {
+    if (!accessToken) {
+      setState(prev => ({ ...prev, error: 'Authentication required' }));
+      return;
+    }
+
+    const trimmedText = text.trim();
+    if (!trimmedText) {
+      setState(prev => ({ ...prev, error: 'Message cannot be empty' }));
+      return;
+    }
+
+    const userMessage: Message = {
+      id: Date.now().toString(),
+      text: trimmedText,
+      isUser: true,
+      timestamp: new Date(),
+      status: 'sending',
+    };
+
+    setState(prev => ({
+      ...prev,
+      messages: [...prev.messages, userMessage],
+      isLoading: true,
+      error: null,
+    }));
+
     try {
-      // Set loading state to prevent premature redirects
-      updateState({ isLoading: true, error: null });
-      
-      if (!discovery?.tokenEndpoint) {
-        throw new Error('Token endpoint not available');
-      }
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => {
+        controller.abort();
+      }, APP_CONFIG.TIMEOUTS.CHAT);
 
-      if (!request?.codeVerifier) {
-        throw new Error('PKCE code verifier not available');
-      }
-
-      const tokenRequest = {
-        grant_type: 'authorization_code',
-        client_id: CLIENT_ID,
-        code: code,
-        redirect_uri: redirectUri,
-        code_verifier: request.codeVerifier,
+      // ✅ FIXED: Use EXACT format that works in PowerShell
+      const requestBody = {
+        text: trimmedText,
+        language: 'en',
+        metadata: {
+          session_id: `session_${Date.now()}`,
+          user_id: user?.id || user?.email || 'mobile_user',
+          ...(includeAudio && { include_audio: true })
+        }
       };
 
-      const response = await fetch(discovery.tokenEndpoint, {
+      console.log('📤 Sending chat request:', JSON.stringify(requestBody, null, 2));
+
+      const response = await fetch(`${APP_CONFIG.SERVICES.orchestrator}${APP_CONFIG.ENDPOINTS.CHAT}`, {
         method: 'POST',
         headers: {
-          'Content-Type': 'application/x-www-form-urlencoded',
+          'Authorization': `Bearer ${accessToken}`,
+          'Content-Type': 'application/json',
         },
-        body: new URLSearchParams(tokenRequest).toString(),
+        body: JSON.stringify(requestBody),
+        signal: controller.signal,
       });
+
+      clearTimeout(timeoutId);
 
       if (!response.ok) {
-        const errorText = await response.text();
-        console.error('Token exchange failed:', errorText);
-        throw new Error(`Token exchange failed: ${response.status}`);
+        let errorText = `Request failed: ${response.status}`;
+        try {
+          const errorData = await response.text();
+          console.error('❌ Response error:', errorData);
+          errorText = errorData || errorText;
+        } catch (e) {
+          // Use default error message
+        }
+        throw new Error(errorText);
       }
 
-      const tokens = await response.json();
+      const data = await response.json();
+      console.log('📥 Chat response received:', JSON.stringify(data, null, 2));
 
-      // Decode JWT to get user info
-      const payload = decodeJWT(tokens.access_token);
-      if (!payload) {
-        throw new Error('Failed to decode access token');
-      }
-
-      const user: User = {
-        id: payload.sub,
-        name: payload.name,
-        email: payload.email,
-        username: payload.preferred_username,
+      const sentUserMessage: Message = {
+        ...userMessage,
+        status: 'sent',
       };
 
-      // Store securely
-      await SecureStore.setItemAsync('accessToken', tokens.access_token);
-      await SecureStore.setItemAsync('userData', JSON.stringify(user));
+      // ✅ Extract response text from the API response
+      let responseText = '';
+      let hasAudio = false;
+      
+      if (data.ok && data.message && data.message.text) {
+        responseText = data.message.text;
+      } else if (data.message?.text) {
+        responseText = data.message.text;
+      } else if (data.text) {
+        responseText = data.text;
+      } else if (typeof data === 'string') {
+        responseText = data;
+      } else {
+        console.warn('Unexpected response format:', data);
+        responseText = 'I received your message but had trouble formatting my response.';
+      }
 
-      // Update state
-      updateState({
-        accessToken: tokens.access_token,
-        isAuthenticated: true,
-        user: user,
-        error: null,
+      const botMessage: Message = {
+        id: (Date.now() + 1).toString(),
+        text: responseText,
+        isUser: false,
+        timestamp: new Date(),
+        status: 'sent',
+        hasAudio: false,
+      };
+
+      setState(prev => ({
+        ...prev,
+        messages: [...prev.messages.slice(0, -1), sentUserMessage, botMessage],
         isLoading: false,
-      });
+      }));
+
+      // Handle audio if present
+      if (data.audio && data.audio.data) {
+        console.log('🔊 Audio received, playing...');
+        hasAudio = true;
+        
+        // Update the bot message to indicate it has audio
+        setState(prev => ({
+          ...prev,
+          messages: prev.messages.map(msg => 
+            msg.id === botMessage.id ? { ...msg, hasAudio: true } : msg
+          ),
+        }));
+        
+        // Play the audio
+        await playAudioFromBase64(data.audio.data, botMessage.id);
+      } else if (data.audio && typeof data.audio === 'string') {
+        // Handle if audio is directly a base64 string
+        console.log('🔊 Direct audio string received, playing...');
+        hasAudio = true;
+        setState(prev => ({
+          ...prev,
+          messages: prev.messages.map(msg => 
+            msg.id === botMessage.id ? { ...msg, hasAudio: true } : msg
+          ),
+        }));
+        await playAudioFromBase64(data.audio, botMessage.id);
+      } else {
+        console.log('ℹ️ No audio in response');
+      }
 
     } catch (error: any) {
-      console.error('Token exchange error:', error);
-      updateState({ 
-        error: error.message || 'Failed to complete authentication',
-        isLoading: false,
-      });
-    }
-  };
-
-  const signOut = async () => {
-    try {
-      // Clear stored data
-      await clearStoredAuth();
+      console.error('💥 Chat error:', error);
       
-      // Reset state
-      updateState({
-        accessToken: null,
-        isAuthenticated: false,
+      let errorMessage = 'Failed to send message';
+      if (error.name === 'AbortError') {
+        errorMessage = 'Request timed out. Please try again.';
+      } else if (error.message) {
+        errorMessage = error.message;
+      }
+
+      const errorUserMessage: Message = {
+        ...userMessage,
+        status: 'error',
+      };
+
+      const errorBotMessage: Message = {
+        id: (Date.now() + 1).toString(),
+        text: `I apologize, but I encountered an error: ${errorMessage}`,
+        isUser: false,
+        timestamp: new Date(),
+        status: 'error',
+      };
+
+      setState(prev => ({
+        ...prev,
+        messages: [...prev.messages.slice(0, -1), errorUserMessage, errorBotMessage],
         isLoading: false,
-        user: null,
-        error: null,
-      });
-    } catch (error) {
-      console.error('Sign out error:', error);
+        error: errorMessage,
+      }));
     }
-  };
+  }, [accessToken, user, playAudioFromBase64]);
 
-  const clearError = () => {
-    updateState({ error: null });
-  };
+  const clearChat = useCallback(() => {
+    setState(prev => ({ ...prev, messages: [], error: null }));
+  }, []);
 
-  const value: AuthContextValue = {
+  const clearError = useCallback(() => {
+    setState(prev => ({ ...prev, error: null }));
+  }, []);
+
+  const value: ChatContextType = {
     ...state,
-    signIn,
-    signOut,
+    sendMessage,
+    clearChat,
     clearError,
   };
 
   return (
-    <AuthContext.Provider value={value}>
+    <ChatContext.Provider value={value}>
       {children}
-    </AuthContext.Provider>
+    </ChatContext.Provider>
   );
 }
 
-export function useAuth(): AuthContextValue {
-  const context = useContext(AuthContext);
+export function useChat(): ChatContextType {
+  const context = useContext(ChatContext);
   if (!context) {
-    throw new Error('useAuth must be used within an AuthProvider');
+    throw new Error('useChat must be used within a ChatProvider');
   }
   return context;
 }

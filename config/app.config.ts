@@ -15,7 +15,7 @@ const APP_CONFIG = {
   },
 
   ENDPOINTS: {
-    CHAT: '/v1/chat',
+    CHAT: '/v1/conversation',
     STT: '/v1/transcribe',
     TTS: '/tts/generate',
     VOICE_PROCESS: '/v1/voice-process',

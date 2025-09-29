@@ -1,4 +1,3 @@
-// app/(tabs)/_layout.tsx
 import React from 'react';
 import { Tabs } from 'expo-router';
 import { TabBarIcon } from '@/components/navigation/TabBarIcon';
@@ -45,6 +44,7 @@ export default function TabLayout() {
         }}
       />
       
+      {/* ✅ ADD THIS */}
       <Tabs.Screen
         name="debug"
         options={{

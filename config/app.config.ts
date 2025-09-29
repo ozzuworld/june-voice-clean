@@ -1,4 +1,4 @@
-// config/app.config.ts - FIXED: Use the working endpoint
+// config/app.config.ts - FIXED: Corrected STT URL
 const APP_CONFIG = {
   KEYCLOAK_URL: 'https://idp.allsafe.world',
   KEYCLOAK: {
@@ -9,13 +9,13 @@ const APP_CONFIG = {
 
   SERVICES: {
     orchestrator: 'https://api.allsafe.world',
-    stt: 'http://142.189.180.177:40275',
+    stt: 'http://142.126.82.204:35254', // ✅ FIXED: Added proper https://
     tts: 'https://tts.allsafe.world',
     idp: 'https://idp.allsafe.world',
   },
 
   ENDPOINTS: {
-    CHAT: '/v1/conversation', // FIXED: Use the working endpoint that matches PowerShell test
+    CHAT: '/v1/conversation',
     STT: '/v1/transcribe',
     TTS: '/tts/generate',
     VOICE_PROCESS: '/v1/voice-process',
@@ -39,12 +39,12 @@ const APP_CONFIG = {
     VOICE: 120000, // 2 minutes for full voice processing
   },
 
-  // Production settings - All debugging disabled
+  // Production settings
   DEBUG: {
     SKIP_STT: false,
-    VERBOSE_LOGS: false, // Disabled for production
+    VERBOSE_LOGS: true, // Keep enabled for debugging
     MOCK_RESPONSES: false,
-    TTS_FALLBACK: true, // Keep fallback for reliability
+    TTS_FALLBACK: true,
   },
 
   STT: {

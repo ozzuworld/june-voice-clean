@@ -17,6 +17,8 @@ import { useAuth } from '@/hooks/useAuth';
 import { useVoice } from '@/hooks/useVoice'; // Import from real hooks file
 import { useColorScheme } from '@/hooks/useColorScheme';
 
+
+
 const { width, height } = Dimensions.get('window');
 const isLandscape = width > height;
 

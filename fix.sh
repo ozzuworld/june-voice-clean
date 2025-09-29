@@ -1,45 +1,44 @@
 #!/bin/bash
+# quick-fix.sh - Fix the immediate syntax errors
 
-# fix-frontend-endpoint.sh
-# Script to fix the frontend API endpoint to match working backend
+echo "🔧 Fixing React Native app syntax errors..."
 
-set -e
+# 1. Fix the broken line in useAuth.tsx (line 226 appears to be incomplete)
+echo "📝 Checking for incomplete lines in useAuth.tsx..."
 
-echo "🔧 Fixing frontend endpoint configuration..."
-
-# Navigate to your project directory (adjust path as needed)
-# cd /path/to/your/june-voice-app
-
-# Check if config file exists
-CONFIG_FILE="config/app.config.ts"
-if [ ! -f "$CONFIG_FILE" ]; then
-    echo "❌ Error: $CONFIG_FILE not found!"
-    echo "Make sure you're in the project root directory"
-    exit 1
+# Find and display the problematic line
+if grep -n "await playAudioFromBase64(data.audio, botMessage.i" hooks/useAuth.tsx; then
+    echo "❌ Found incomplete line in useAuth.tsx"
+    echo "This line needs to be completed or removed"
+    echo ""
+    echo "Quick fix options:"
+    echo "1. Replace the entire hooks/useAuth.tsx with the fixed version from above"
+    echo "2. Or manually complete line 226 in your editor"
+    echo ""
 fi
 
-echo "📄 Found config file: $CONFIG_FILE"
+# 2. Check for circular dependencies
+echo "🔍 Checking for circular dependencies..."
+if grep -r "hooks/useAuth" hooks/useAuth.tsx; then
+    echo "⚠️  Potential circular dependency detected in useAuth.tsx"
+    echo "Make sure useAuth.tsx doesn't import itself"
+fi
 
-# Backup original file
-cp "$CONFIG_FILE" "$CONFIG_FILE.backup"
-echo "💾 Created backup: $CONFIG_FILE.backup"
-
-# Fix the endpoint - change '/v1/chat' to '/v1/conversation'
-sed -i.tmp "s|CHAT: '/v1/chat'|CHAT: '/v1/conversation'|g" "$CONFIG_FILE"
-rm -f "$CONFIG_FILE.tmp"
-
-echo "✅ Updated CHAT endpoint from '/v1/chat' to '/v1/conversation'"
-
-# Verify the change
-echo "🔍 Verifying change:"
-grep -n "CHAT:" "$CONFIG_FILE" || echo "Could not verify change"
+# 3. Clear Metro cache
+echo "🧹 Clearing Metro cache..."
+if command -v npx &> /dev/null; then
+    npx expo start -c
+elif command -v npm &> /dev/null; then
+    npm run clean
+else
+    echo "Please run: expo start -c"
+fi
 
 echo ""
-echo "✅ Frontend endpoint fix completed!"
-echo "📱 Your app should now connect to the working backend endpoint"
+echo "✅ Quick fixes applied!"
 echo ""
 echo "Next steps:"
-echo "1. Test your app to confirm it's working"
-echo "2. If something goes wrong, restore with: cp $CONFIG_FILE.backup $CONFIG_FILE"
-echo ""
-echo "🚀 The frontend will now call: https://api.allsafe.world/v1/conversation"
+echo "1. Replace hooks/useAuth.tsx with the fixed version"
+echo "2. Replace app/_layout.tsx with the fixed version" 
+echo "3. Restart your development server: expo start -c"
+echo "4. If errors persist, check that all imports are correct"

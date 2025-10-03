@@ -1,4 +1,4 @@
-// hooks/useAuth.tsx - FIXED: Better Keycloak discovery handling
+// hooks/useAuth.tsx - FIXED: Wait for discovery to load
 import React, { createContext, useContext, useEffect, useState, useRef } from 'react';
 import * as WebBrowser from 'expo-web-browser';
 import * as SecureStore from 'expo-secure-store';
@@ -25,6 +25,7 @@ interface AuthContextValue {
   clearError: () => void;
   contextId: string;
   renderCount: number;
+  isDiscoveryReady: boolean; // NEW: Expose discovery status
 }
 
 const AuthContext = createContext<AuthContextValue | undefined>(undefined);
@@ -58,7 +59,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     path: 'auth/callback',
   });
 
-  // ✅ FIX: Always provide config, but only use when discovery is ready
+  // ✅ FIX: Only create auth request when discovery is ready
   const [request, response, promptAsync] = useAuthRequest(
     {
       clientId: CLIENT_ID,
@@ -67,13 +68,17 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       responseType: 'code',
       usePKCE: true,
     },
-    discovery // Pass discovery directly - useAuthRequest handles null internally
+    discovery // Pass discovery - useAuthRequest will wait until it's ready
   );
+
+  // Track if discovery is ready
+  const isDiscoveryReady = !!discovery && !!request;
 
   console.log(`🔧 Auth setup (${contextId}):`, {
     redirectUri,
     hasDiscovery: !!discovery,
     hasRequest: !!request,
+    isDiscoveryReady,
     discoveryAuthEndpoint: discovery?.authorizationEndpoint,
     keycloakRealm: REALM,
   });
@@ -184,19 +189,27 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     try {
       console.log(`🚀 Starting sign in (${contextId})...`);
       
-      // ✅ FIX: Wait for discovery and request to be ready
+      // ✅ FIX: Check if discovery is ready with better messaging
       if (!discovery) {
-        console.warn('⚠️ Discovery not ready yet, waiting...');
+        console.warn('⚠️ Discovery document not loaded yet');
         updateState({ 
-          error: 'Connecting to authentication service... Please wait a moment and try again.' 
+          error: 'Loading authentication service... Please wait a moment.' 
         });
+        
+        // Automatically retry after a short delay
+        setTimeout(() => {
+          if (discovery) {
+            console.log('✅ Discovery ready now, please try again');
+            updateState({ error: null });
+          }
+        }, 2000);
         return;
       }
 
       if (!request) {
-        console.warn('⚠️ Auth request not ready yet');
+        console.warn('⚠️ Auth request not initialized yet');
         updateState({ 
-          error: 'Authentication not ready. Please wait and try again.' 
+          error: 'Authentication not ready. Please try again in a moment.' 
         });
         return;
       }
@@ -206,7 +219,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         tokenEndpoint: discovery.tokenEndpoint,
       });
 
-      // Clear any existing invalid tokens first
+      // Clear any existing state
       await clearStoredAuth();
       updateState({ 
         error: null,
@@ -342,6 +355,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     clearError,
     contextId,
     renderCount: renderCount.current,
+    isDiscoveryReady,
   };
 
   return (

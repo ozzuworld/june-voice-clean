@@ -1,17 +1,22 @@
-// config/app.config.ts - FIXED: Corrected STT URL
+// config/app.config.ts - HTTP configuration for development
 const APP_CONFIG = {
+  // ✅ IMPORTANT: Use HTTP if certificate is self-signed/staging
+  // Change to 'https' once you have a proper certificate
   KEYCLOAK_URL: 'https://idp.allsafe.world',
+  
   KEYCLOAK: {
     REALM: 'allsafe', 
     CLIENT_ID: 'june-mobile-app',
   },
+  
+  // ✅ Make sure this matches your scheme in app.json
   REDIRECT_SCHEME: 'june',
 
   SERVICES: {
-    orchestrator: 'http://api.allsafe.world',
-    stt: 'https://tt.allsafe.world', // ✅ FIXED: Added proper https://
-    tts: 'http://tts.allsafe.world',
-    idp: 'http://idp.allsafe.world',
+    orchestrator: 'https://api.allsafe.world',
+    stt: 'https://tt.allsafe.world',
+    tts: 'https://tts.allsafe.world',
+    idp: 'https://idp.allsafe.world',
   },
 
   ENDPOINTS: {
@@ -21,7 +26,6 @@ const APP_CONFIG = {
     VOICE_PROCESS: '/v1/voice-process',
   },
 
-  // Production TTS Configuration
   TTS: {
     DEFAULT_VOICE: 'default',
     DEFAULT_SPEED: 1.0,
@@ -31,25 +35,23 @@ const APP_CONFIG = {
     CHUNK_SIZE: 200,
   },
 
-  // Production Timeouts - Conservative values
   TIMEOUTS: {
-    STT: 30000,   // 30 seconds
-    TTS: 90000,   // 90 seconds
-    CHAT: 60000,  // 60 seconds
-    VOICE: 120000, // 2 minutes for full voice processing
+    STT: 30000,
+    TTS: 90000,
+    CHAT: 60000,
+    VOICE: 120000,
   },
 
-  // Production settings
   DEBUG: {
     SKIP_STT: false,
-    VERBOSE_LOGS: true, // Keep enabled for debugging
+    VERBOSE_LOGS: true,
     MOCK_RESPONSES: false,
     TTS_FALLBACK: true,
   },
 
   STT: {
     SUPPORTED_FORMATS: ['m4a', 'wav', 'mp3'],
-    MAX_DURATION_MS: 300000, // 5 minutes max recording
+    MAX_DURATION_MS: 300000,
     AUTO_DETECT_LANGUAGE: true,
     DEFAULT_LANGUAGE: 'en',
   },

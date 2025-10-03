@@ -1,4 +1,4 @@
-// components/EndpointDiscovery.tsx
+// app/(tabs)/debug.tsx - FIXED: Added default export
 import React, { useState } from 'react';
 import { View, StyleSheet, ScrollView, Alert } from 'react-native';
 import { ThemedView } from '@/components/ThemedView';
@@ -7,7 +7,8 @@ import { Button } from '@/components/ui/Button';
 import { useAuth } from '@/hooks/useAuth';
 import APP_CONFIG from '@/config/app.config';
 
-export function EndpointDiscovery() {
+// ✅ Main component with default export
+export default function DebugScreen() {
   const { accessToken, isAuthenticated } = useAuth();
   const [isSearching, setIsSearching] = useState(false);
   const [results, setResults] = useState<string[]>([]);

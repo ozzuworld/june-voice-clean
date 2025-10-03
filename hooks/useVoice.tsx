@@ -1,5 +1,5 @@
-// hooks/useVoice.tsx - DEBUG VERSION with detailed network logging
-import React, { createContext, useCallback, useContext, useRef, useState } from 'react';
+// hooks/useVoice.tsx - FIXED: Ensure accessToken is passed to all API calls
+import React, { createContext, useCallback, useContext, useRef, useState, useEffect } from 'react';
 import { Platform, Alert } from 'react-native';
 import { Audio } from 'expo-av';
 import * as FileSystem from 'expo-file-system';
@@ -39,6 +39,14 @@ export function VoiceProvider({ children }: { children: React.ReactNode }) {
   const soundRef = useRef<Audio.Sound | null>(null);
   const isProcessingRef = useRef(false);
   const { accessToken, isAuthenticated } = useAuth();
+  
+  // ✅ FIX: Store latest accessToken in a ref so it's always available
+  const accessTokenRef = useRef<string | null>(null);
+  
+  useEffect(() => {
+    accessTokenRef.current = accessToken;
+    console.log('🔑 Access token updated:', accessToken ? 'Present' : 'Missing');
+  }, [accessToken]);
 
   const setupAudioMode = useCallback(async () => {
     try {
@@ -59,14 +67,16 @@ export function VoiceProvider({ children }: { children: React.ReactNode }) {
       });
       
       console.log('✅ Audio mode setup successful');
-    } catch (error) {
+    } catch (error: any) {
       console.error('❌ Audio mode setup failed:', error);
       throw new Error(`Audio setup failed: ${error.message}`);
     }
   }, []);
 
   const startListening = useCallback(async () => {
-    if (!isAuthenticated || !accessToken) {
+    // ✅ FIX: Check ref instead of state
+    if (!isAuthenticated || !accessTokenRef.current) {
+      console.error('❌ Cannot start listening - not authenticated');
       setState(s => ({ ...s, error: 'Authentication required' }));
       return;
     }
@@ -122,7 +132,7 @@ export function VoiceProvider({ children }: { children: React.ReactNode }) {
         error: error.message || 'Failed to start recording',
       }));
     }
-  }, [accessToken, isAuthenticated, setupAudioMode, state.isListening, state.isProcessing]);
+  }, [isAuthenticated, setupAudioMode, state.isListening, state.isProcessing]);
 
   const stopListening = useCallback(async () => {
     if (!state.isListening || isProcessingRef.current) {
@@ -171,9 +181,14 @@ export function VoiceProvider({ children }: { children: React.ReactNode }) {
         throw new Error('No audio file to process');
       }
 
+      // ✅ FIX: Check token before processing
+      if (!accessTokenRef.current) {
+        throw new Error('Authentication token missing. Please sign in again.');
+      }
+
       console.log('🎤 Processing voice input from:', audioUri);
+      console.log('🔑 Using token:', accessTokenRef.current.substring(0, 20) + '...');
       
-      // ✅ DEBUG: Check if file exists
       const fileInfo = await FileSystem.getInfoAsync(audioUri);
       console.log('📁 Audio file info:', {
         exists: fileInfo.exists,
@@ -185,14 +200,12 @@ export function VoiceProvider({ children }: { children: React.ReactNode }) {
         throw new Error('Audio file does not exist at URI');
       }
 
-      // ✅ DEBUG: Log which endpoint we're about to call
       console.log('🎯 Using endpoints:', {
         STT: `${APP_CONFIG.SERVICES.stt}${APP_CONFIG.ENDPOINTS.STT}`,
         CHAT: `${APP_CONFIG.SERVICES.orchestrator}${APP_CONFIG.ENDPOINTS.CHAT}`,
         VOICE: `${APP_CONFIG.SERVICES.orchestrator}${APP_CONFIG.ENDPOINTS.VOICE_PROCESS}`,
       });
 
-      // Method 1: Use separate STT + Chat (recommended)
       console.log('📝 Method: STT → Chat → TTS');
       
       // Step 1: Speech-to-Text
@@ -239,6 +252,12 @@ export function VoiceProvider({ children }: { children: React.ReactNode }) {
     const sttEndpoint = `${APP_CONFIG.SERVICES.stt}${APP_CONFIG.ENDPOINTS.STT}`;
     console.log('🎯 Calling STT endpoint:', sttEndpoint);
 
+    // ✅ FIX: Use ref to get latest token
+    const token = accessTokenRef.current;
+    if (!token) {
+      throw new Error('No authentication token available');
+    }
+
     const controller = new AbortController();
     const timeoutId = setTimeout(() => {
       console.log('⏰ STT timeout reached');
@@ -246,7 +265,6 @@ export function VoiceProvider({ children }: { children: React.ReactNode }) {
     }, APP_CONFIG.TIMEOUTS.STT);
 
     try {
-      // ✅ DEBUG: Create FormData with detailed logging
       const formData = new FormData();
       formData.append('audio', {
         uri: audioUri,
@@ -256,15 +274,15 @@ export function VoiceProvider({ children }: { children: React.ReactNode }) {
 
       console.log('📤 Sending STT request:', {
         endpoint: sttEndpoint,
-        hasAuth: !!accessToken,
-        authPrefix: accessToken?.substring(0, 20) + '...',
+        hasAuth: !!token,
+        authPrefix: token.substring(0, 20) + '...',
         fileUri: audioUri,
       });
 
       const response = await fetch(sttEndpoint, {
         method: 'POST',
         headers: {
-          'Authorization': `Bearer ${accessToken}`,
+          'Authorization': `Bearer ${token}`, // ✅ FIX: Use token from ref
           // Don't set Content-Type - let FormData handle it
         },
         body: formData,
@@ -311,11 +329,17 @@ export function VoiceProvider({ children }: { children: React.ReactNode }) {
       
       throw error;
     }
-  }, [accessToken]);
+  }, []);
 
   const getAIResponse = useCallback(async (text: string): Promise<string> => {
     const chatEndpoint = `${APP_CONFIG.SERVICES.orchestrator}${APP_CONFIG.ENDPOINTS.CHAT}`;
     console.log('🎯 Calling Chat endpoint:', chatEndpoint);
+
+    // ✅ FIX: Use ref to get latest token
+    const token = accessTokenRef.current;
+    if (!token) {
+      throw new Error('No authentication token available');
+    }
 
     const controller = new AbortController();
     const timeoutId = setTimeout(() => {
@@ -337,13 +361,13 @@ export function VoiceProvider({ children }: { children: React.ReactNode }) {
       console.log('📤 Sending chat request:', {
         endpoint: chatEndpoint,
         textLength: text.length,
-        hasAuth: !!accessToken,
+        hasAuth: !!token,
       });
 
       const response = await fetch(chatEndpoint, {
         method: 'POST',
         headers: {
-          'Authorization': `Bearer ${accessToken}`,
+          'Authorization': `Bearer ${token}`, // ✅ FIX: Use token from ref
           'Content-Type': 'application/json',
         },
         body: JSON.stringify(requestBody),
@@ -396,11 +420,17 @@ export function VoiceProvider({ children }: { children: React.ReactNode }) {
       
       throw error;
     }
-  }, [accessToken]);
+  }, []);
 
   const textToSpeech = useCallback(async (text: string): Promise<void> => {
     const ttsEndpoint = `${APP_CONFIG.SERVICES.tts}${APP_CONFIG.ENDPOINTS.TTS}`;
     console.log('🎯 Calling TTS endpoint:', ttsEndpoint);
+
+    // ✅ FIX: Use ref to get latest token
+    const token = accessTokenRef.current;
+    if (!token) {
+      throw new Error('No authentication token available');
+    }
 
     const maxLength = APP_CONFIG.TTS.MAX_TEXT_LENGTH;
     const truncatedText = text.length > maxLength 
@@ -431,13 +461,13 @@ export function VoiceProvider({ children }: { children: React.ReactNode }) {
       console.log('📤 Sending TTS request:', {
         endpoint: ttsEndpoint,
         textLength: truncatedText.length,
-        hasAuth: !!accessToken,
+        hasAuth: !!token,
       });
 
       const response = await fetch(ttsEndpoint, {
         method: 'POST',
         headers: {
-          'Authorization': `Bearer ${accessToken}`,
+          'Authorization': `Bearer ${token}`, // ✅ FIX: Use token from ref
           'Content-Type': 'application/json',
         },
         body: JSON.stringify(requestPayload),
@@ -461,7 +491,6 @@ export function VoiceProvider({ children }: { children: React.ReactNode }) {
         throw new Error('TTS returned no audio data');
       }
 
-      // Save and play audio
       const audioPath = `${FileSystem.cacheDirectory}tts_response_${Date.now()}.wav`;
       const base64Audio = btoa(String.fromCharCode(...new Uint8Array(audioBlob)));
       
@@ -471,7 +500,6 @@ export function VoiceProvider({ children }: { children: React.ReactNode }) {
 
       console.log('💾 Audio saved to:', audioPath);
 
-      // Clean up previous sound
       if (soundRef.current) {
         try {
           await soundRef.current.stopAsync();
@@ -524,7 +552,7 @@ export function VoiceProvider({ children }: { children: React.ReactNode }) {
       
       throw error;
     }
-  }, [accessToken]);
+  }, []);
 
   const clearError = useCallback(() => {
     setState(s => ({ ...s, error: null }));

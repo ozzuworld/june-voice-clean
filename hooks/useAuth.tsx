@@ -1,4 +1,4 @@
-// hooks/useAuth.tsx - DEBUG VERSION with detailed logging
+// hooks/useAuth.tsx - FIXED: Better Keycloak discovery handling
 import React, { createContext, useContext, useEffect, useState, useRef } from 'react';
 import * as WebBrowser from 'expo-web-browser';
 import * as SecureStore from 'expo-secure-store';
@@ -23,7 +23,6 @@ interface AuthContextValue {
   signOut: () => Promise<void>;
   error: string | null;
   clearError: () => void;
-  // Debug info
   contextId: string;
   renderCount: number;
 }
@@ -36,7 +35,6 @@ const REALM = 'allsafe';
 const CLIENT_ID = 'june-mobile-app';
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
-  // Debug: Generate unique ID for this context instance
   const contextId = useRef(`ctx_${Math.random().toString(36).substr(2, 9)}`).current;
   const renderCount = useRef(0);
   renderCount.current += 1;
@@ -60,27 +58,27 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     path: 'auth/callback',
   });
 
-const [request, response, promptAsync] = useAuthRequest(
-  {
-    clientId: CLIENT_ID,
-    // 👇 include your audience scope (harmless if it's already Default in Keycloak)
-    scopes: ['openid', 'profile', 'email', 'orchestrator-aud'],
-    redirectUri: redirectUri,
-    responseType: 'code',
-    usePKCE: true,
-  },
-  discovery
-);
-
+  // ✅ FIX: Always provide config, but only use when discovery is ready
+  const [request, response, promptAsync] = useAuthRequest(
+    {
+      clientId: CLIENT_ID,
+      scopes: ['openid', 'profile', 'email', 'orchestrator-aud'],
+      redirectUri: redirectUri,
+      responseType: 'code',
+      usePKCE: true,
+    },
+    discovery // Pass discovery directly - useAuthRequest handles null internally
+  );
 
   console.log(`🔧 Auth setup (${contextId}):`, {
     redirectUri,
     hasDiscovery: !!discovery,
     hasRequest: !!request,
+    discoveryAuthEndpoint: discovery?.authorizationEndpoint,
     keycloakRealm: REALM,
   });
 
-  // Debug state changes with context ID
+  // Debug state changes
   useEffect(() => {
     console.log(`🔍 Auth state changed (${contextId}):`, {
       isAuthenticated: state.isAuthenticated,
@@ -93,11 +91,11 @@ const [request, response, promptAsync] = useAuthRequest(
     });
   }, [state, contextId]);
 
-  // Load stored auth on startup - only once per context
+  // Load stored auth on startup
   useEffect(() => {
     console.log(`🔄 Loading stored auth (${contextId})...`);
     loadStoredAuth();
-  }, [contextId]); // Use contextId to ensure it only runs once per instance
+  }, [contextId]);
 
   // Handle auth response
   useEffect(() => {
@@ -123,7 +121,6 @@ const [request, response, promptAsync] = useAuthRequest(
     }
   }, [response, contextId]);
 
-  // Centralized state update with logging
   const updateState = (updates: Partial<typeof state>) => {
     console.log(`🔄 State update (${contextId}):`, updates);
     setState(prev => {
@@ -187,12 +184,27 @@ const [request, response, promptAsync] = useAuthRequest(
     try {
       console.log(`🚀 Starting sign in (${contextId})...`);
       
+      // ✅ FIX: Wait for discovery and request to be ready
+      if (!discovery) {
+        console.warn('⚠️ Discovery not ready yet, waiting...');
+        updateState({ 
+          error: 'Connecting to authentication service... Please wait a moment and try again.' 
+        });
+        return;
+      }
+
       if (!request) {
+        console.warn('⚠️ Auth request not ready yet');
         updateState({ 
           error: 'Authentication not ready. Please wait and try again.' 
         });
         return;
       }
+
+      console.log(`✅ Discovery ready (${contextId}):`, {
+        authEndpoint: discovery.authorizationEndpoint,
+        tokenEndpoint: discovery.tokenEndpoint,
+      });
 
       // Clear any existing invalid tokens first
       await clearStoredAuth();
@@ -204,7 +216,7 @@ const [request, response, promptAsync] = useAuthRequest(
         isLoading: false,
       });
       
-      // This opens the browser and handles PKCE automatically
+      console.log(`🌐 Opening browser for authentication (${contextId})...`);
       await promptAsync();
       
     } catch (error: any) {
@@ -220,7 +232,6 @@ const [request, response, promptAsync] = useAuthRequest(
     try {
       console.log(`🔄 Exchanging code for token (${contextId})...`);
       
-      // Set loading state to prevent premature redirects
       updateState({ isLoading: true, error: null });
       
       if (!discovery?.tokenEndpoint) {
@@ -275,7 +286,7 @@ const [request, response, promptAsync] = useAuthRequest(
 
       console.log(`✅ User authenticated (${contextId}):`, user.email || user.username);
 
-      // Store securely FIRST
+      // Store securely
       await SecureStore.setItemAsync('accessToken', tokens.access_token);
       await SecureStore.setItemAsync('userData', JSON.stringify(user));
       console.log(`💾 Tokens saved to secure storage (${contextId})`);
@@ -304,10 +315,8 @@ const [request, response, promptAsync] = useAuthRequest(
     try {
       console.log(`🚪 Signing out (${contextId})...`);
       
-      // Clear stored data
       await clearStoredAuth();
       
-      // Reset state
       updateState({
         accessToken: null,
         isAuthenticated: false,
@@ -331,7 +340,6 @@ const [request, response, promptAsync] = useAuthRequest(
     signIn,
     signOut,
     clearError,
-    // Debug info
     contextId,
     renderCount: renderCount.current,
   };
@@ -349,7 +357,6 @@ export function useAuth(): AuthContextValue {
     throw new Error('useAuth must be used within an AuthProvider');
   }
   
-  // Log every time useAuth is called
   console.log(`🎣 useAuth called - Context ID: ${context.contextId}, Render: ${context.renderCount}`);
   
   return context;

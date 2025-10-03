@@ -9,8 +9,8 @@ const APP_CONFIG = {
 
   SERVICES: {
     orchestrator: 'https://api.allsafe.world',
-    stt: 'http://142.126.82.204:35254', // ✅ FIXED: Added proper https://
-    tts: 'https://tts.allsafe.world',
+    stt: 'stt.allsafe.world', // ✅ FIXED: Added proper https://
+    tts: 'tts.allsafe.world',
     idp: 'https://idp.allsafe.world',
   },
 

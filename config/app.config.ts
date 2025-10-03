@@ -8,10 +8,10 @@ const APP_CONFIG = {
   REDIRECT_SCHEME: 'june',
 
   SERVICES: {
-    orchestrator: 'https://api.allsafe.world',
-    stt: 'stt.allsafe.world', // ✅ FIXED: Added proper https://
-    tts: 'tts.allsafe.world',
-    idp: 'https://idp.allsafe.world',
+    orchestrator: 'http://api.allsafe.world',
+    stt: 'https://tt.allsafe.world', // ✅ FIXED: Added proper https://
+    tts: 'http://tts.allsafe.world',
+    idp: 'http://idp.allsafe.world',
   },
 
   ENDPOINTS: {

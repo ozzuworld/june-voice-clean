@@ -2,7 +2,7 @@
 const APP_CONFIG = {
   // ✅ IMPORTANT: Use HTTP if certificate is self-signed/staging
   // Change to 'https' once you have a proper certificate
-  KEYCLOAK_URL: 'https://idp.allsafe.world',
+  KEYCLOAK_URL: 'https://idp.ozzu.world',
   
   KEYCLOAK: {
     REALM: 'allsafe', 
@@ -13,10 +13,10 @@ const APP_CONFIG = {
   REDIRECT_SCHEME: 'june',
 
   SERVICES: {
-    orchestrator: 'https://api.allsafe.world',
-    stt: 'https://tt.allsafe.world',
-    tts: 'https://tts.allsafe.world',
-    idp: 'https://idp.allsafe.world',
+    orchestrator: 'https://api.ozzu.world',
+    stt: 'https://tt.ozzu.world',
+    tts: 'https://tts.ozzu.world',
+    idp: 'https://idp.ozzu.world',
   },
 
   ENDPOINTS: {

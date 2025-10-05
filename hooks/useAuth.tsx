@@ -1,9 +1,10 @@
-// hooks/useAuth.tsx - FIXED: Wait for discovery to load
-import React, { createContext, useContext, useEffect, useState, useRef } from 'react';
+// hooks/useAuth.tsx - CORRECTED VERSION
+import React, { createContext, useContext, useEffect, useState, useRef, useMemo, useCallback } from 'react';
 import * as WebBrowser from 'expo-web-browser';
 import * as SecureStore from 'expo-secure-store';
 import { makeRedirectUri, useAuthRequest, useAutoDiscovery } from 'expo-auth-session';
 import { decodeJWT } from '@/utils/jwt';
+import APP_CONFIG from '@/config/app.config'; // ✅ IMPORT CONFIG
 
 WebBrowser.maybeCompleteAuthSession();
 
@@ -23,24 +24,14 @@ interface AuthContextValue {
   signOut: () => Promise<void>;
   error: string | null;
   clearError: () => void;
-  contextId: string;
-  renderCount: number;
-  isDiscoveryReady: boolean; // NEW: Expose discovery status
+  isDiscoveryReady: boolean;
 }
 
 const AuthContext = createContext<AuthContextValue | undefined>(undefined);
 
-// Keycloak configuration
-const KEYCLOAK_URL = 'https://idp.allsafe.world';
-const REALM = 'allsafe';
-const CLIENT_ID = 'june-mobile-app';
-
 export function AuthProvider({ children }: { children: React.ReactNode }) {
-  const contextId = useRef(`ctx_${Math.random().toString(36).substr(2, 9)}`).current;
-  const renderCount = useRef(0);
-  renderCount.current += 1;
-
-  console.log(`🔧 AuthProvider render #${renderCount.current} (ID: ${contextId})`);
+  // ✅ Generate stable context ID
+  const contextId = useRef(`ctx_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`).current;
 
   const [state, setState] = useState({
     accessToken: null as string | null,
@@ -50,97 +41,82 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     error: null as string | null,
   });
 
-  // Auto-discover Keycloak endpoints
-  const discovery = useAutoDiscovery(`${KEYCLOAK_URL}/realms/${REALM}`);
+  // ✅ USE CONFIG VALUES - Not hardcoded
+  const keycloakUrl = APP_CONFIG.KEYCLOAK_URL;
+  const realm = APP_CONFIG.KEYCLOAK.REALM;
+  const clientId = APP_CONFIG.KEYCLOAK.CLIENT_ID;
+  const discoveryUrl = `${keycloakUrl}/realms/${realm}`;
 
-  // Create redirect URI
-  const redirectUri = makeRedirectUri({
-    scheme: 'june',
-    path: 'auth/callback',
-  });
+  // ✅ Auto-discover Keycloak endpoints using config
+  const discovery = useAutoDiscovery(discoveryUrl);
 
-  // ✅ FIX: Only create auth request when discovery is ready
+  // ✅ Create redirect URI using config
+  const redirectUri = useMemo(() => 
+    makeRedirectUri({
+      scheme: APP_CONFIG.REDIRECT_SCHEME,
+      path: 'auth/callback',
+    }), []);
+
+  // ✅ Only create auth request when discovery is ready
   const [request, response, promptAsync] = useAuthRequest(
     {
-      clientId: CLIENT_ID,
+      clientId: clientId,
       scopes: ['openid', 'profile', 'email', 'orchestrator-aud'],
       redirectUri: redirectUri,
       responseType: 'code',
       usePKCE: true,
     },
-    discovery // Pass discovery - useAuthRequest will wait until it's ready
+    discovery
   );
 
-  // Track if discovery is ready
-  const isDiscoveryReady = !!discovery && !!request;
+  const isDiscoveryReady = Boolean(discovery && request);
 
-  console.log(`🔧 Auth setup (${contextId}):`, {
-    redirectUri,
-    hasDiscovery: !!discovery,
-    hasRequest: !!request,
-    isDiscoveryReady,
-    discoveryAuthEndpoint: discovery?.authorizationEndpoint,
-    keycloakRealm: REALM,
-  });
+  // ✅ Optimize logging for development only
+  const logDebug = useCallback((message: string, data?: any) => {
+    if (APP_CONFIG.DEBUG.VERBOSE_LOGS && __DEV__) {
+      console.log(`[Auth-${contextId.slice(-4)}] ${message}`, data || '');
+    }
+  }, [contextId]);
 
-  // Debug state changes
-  useEffect(() => {
-    console.log(`🔍 Auth state changed (${contextId}):`, {
-      isAuthenticated: state.isAuthenticated,
-      isLoading: state.isLoading,
-      hasUser: !!state.user,
-      hasToken: !!state.accessToken,
-      userEmail: state.user?.email,
-      error: state.error,
-      renderCount: renderCount.current,
+  // ✅ Memoized state update to prevent unnecessary re-renders
+  const updateState = useCallback((updates: Partial<typeof state>) => {
+    setState(prev => {
+      const newState = { ...prev, ...updates };
+      logDebug('State update', { from: prev, to: newState });
+      return newState;
     });
-  }, [state, contextId]);
+  }, [logDebug]);
 
   // Load stored auth on startup
   useEffect(() => {
-    console.log(`🔄 Loading stored auth (${contextId})...`);
     loadStoredAuth();
-  }, [contextId]);
+  }, []);
 
   // Handle auth response
   useEffect(() => {
     if (response) {
-      console.log(`📱 Auth response (${contextId}):`, response.type);
+      logDebug('Auth response received', response.type);
       
       if (response.type === 'success') {
-        console.log(`✅ Auth success, processing... (${contextId})`);
         handleAuthSuccess(response.params.code);
       } else if (response.type === 'error') {
-        console.error(`❌ Auth error (${contextId}):`, response.params);
+        logDebug('Auth error', response.params);
         updateState({
           error: response.params.error_description || 'Authentication failed',
           isLoading: false,
         });
       } else if (response.type === 'cancel') {
-        console.log(`❌ Auth cancelled (${contextId})`);
         updateState({ 
           error: 'Authentication cancelled',
           isLoading: false,
         });
       }
     }
-  }, [response, contextId]);
-
-  const updateState = (updates: Partial<typeof state>) => {
-    console.log(`🔄 State update (${contextId}):`, updates);
-    setState(prev => {
-      const newState = { ...prev, ...updates };
-      console.log(`📊 State transition (${contextId}):`, {
-        from: { isAuthenticated: prev.isAuthenticated, isLoading: prev.isLoading },
-        to: { isAuthenticated: newState.isAuthenticated, isLoading: newState.isLoading }
-      });
-      return newState;
-    });
-  };
+  }, [response, updateState, logDebug]);
 
   const loadStoredAuth = async () => {
     try {
-      console.log(`🔄 Loading stored auth (${contextId})...`);
+      logDebug('Loading stored auth...');
       
       const token = await SecureStore.getItemAsync('accessToken');
       const userData = await SecureStore.getItemAsync('userData');
@@ -148,16 +124,16 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       if (token && userData) {
         const user = JSON.parse(userData);
         
-        // Validate token before using it
+        // Validate token
         const payload = decodeJWT(token);
         if (!payload || !payload.exp || payload.exp * 1000 < Date.now()) {
-          console.log(`⚠️ Stored token expired, clearing... (${contextId})`);
+          logDebug('Stored token expired, clearing...');
           await clearStoredAuth();
           updateState({ isLoading: false });
           return;
         }
         
-        console.log(`✅ Found valid stored auth (${contextId}):`, user.email || user.username);
+        logDebug('Valid stored auth found', { email: user.email });
         updateState({
           accessToken: token,
           isAuthenticated: true,
@@ -165,11 +141,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           isLoading: false,
         });
       } else {
-        console.log(`ℹ️ No stored auth found (${contextId})`);
+        logDebug('No stored auth found');
         updateState({ isLoading: false });
       }
     } catch (error) {
-      console.error(`❌ Failed to load stored auth (${contextId}):`, error);
+      logDebug('Failed to load stored auth', error);
       await clearStoredAuth();
       updateState({ isLoading: false });
     }
@@ -177,49 +153,45 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const clearStoredAuth = async () => {
     try {
-      console.log(`🗑️ Clearing stored auth (${contextId})`);
-      await SecureStore.deleteItemAsync('accessToken');
-      await SecureStore.deleteItemAsync('userData');
+      await Promise.all([
+        SecureStore.deleteItemAsync('accessToken'),
+        SecureStore.deleteItemAsync('userData')
+      ]);
+      logDebug('Stored auth cleared');
     } catch (error) {
-      console.error(`Error clearing stored auth (${contextId}):`, error);
+      logDebug('Error clearing stored auth', error);
     }
   };
 
-  const signIn = async () => {
+  const signIn = useCallback(async () => {
     try {
-      console.log(`🚀 Starting sign in (${contextId})...`);
+      logDebug('Starting sign in...');
       
-      // ✅ FIX: Check if discovery is ready with better messaging
-      if (!discovery) {
-        console.warn('⚠️ Discovery document not loaded yet');
-        updateState({ 
-          error: 'Loading authentication service... Please wait a moment.' 
-        });
+      if (!isDiscoveryReady) {
+        const message = !discovery 
+          ? 'Loading authentication service... Please wait.'
+          : 'Authentication not ready. Please try again.';
         
-        // Automatically retry after a short delay
-        setTimeout(() => {
-          if (discovery) {
-            console.log('✅ Discovery ready now, please try again');
-            updateState({ error: null });
-          }
-        }, 2000);
+        updateState({ error: message });
+        
+        // Auto-retry when discovery becomes ready
+        if (!discovery) {
+          setTimeout(() => {
+            if (discovery) {
+              updateState({ error: null });
+            }
+          }, 2000);
+        }
         return;
       }
 
-      if (!request) {
-        console.warn('⚠️ Auth request not initialized yet');
-        updateState({ 
-          error: 'Authentication not ready. Please try again in a moment.' 
-        });
-        return;
-      }
-
-      console.log(`✅ Discovery ready (${contextId}):`, {
+      logDebug('Discovery ready', {
         authEndpoint: discovery.authorizationEndpoint,
         tokenEndpoint: discovery.tokenEndpoint,
+        configUrl: discoveryUrl
       });
 
-      // Clear any existing state
+      // Clear existing state
       await clearStoredAuth();
       updateState({ 
         error: null,
@@ -229,43 +201,37 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         isLoading: false,
       });
       
-      console.log(`🌐 Opening browser for authentication (${contextId})...`);
+      logDebug('Opening browser for authentication...');
       await promptAsync();
       
     } catch (error: any) {
-      console.error(`❌ Sign in error (${contextId}):`, error);
+      logDebug('Sign in error', error);
       updateState({ 
         error: error.message || 'Sign in failed',
         isLoading: false,
       });
     }
-  };
+  }, [isDiscoveryReady, discovery, promptAsync, updateState, logDebug, discoveryUrl]);
 
   const handleAuthSuccess = async (code: string) => {
     try {
-      console.log(`🔄 Exchanging code for token (${contextId})...`);
+      logDebug('Exchanging code for token...');
       
       updateState({ isLoading: true, error: null });
       
-      if (!discovery?.tokenEndpoint) {
-        throw new Error('Token endpoint not available');
+      if (!discovery?.tokenEndpoint || !request?.codeVerifier) {
+        throw new Error('Authentication configuration not ready');
       }
-
-      if (!request?.codeVerifier) {
-        throw new Error('PKCE code verifier not available');
-      }
-
-      console.log(`🔑 Using PKCE code verifier (${contextId}):`, request.codeVerifier.substring(0, 10) + '...');
 
       const tokenRequest = {
         grant_type: 'authorization_code',
-        client_id: CLIENT_ID,
+        client_id: clientId,
         code: code,
         redirect_uri: redirectUri,
         code_verifier: request.codeVerifier,
       };
 
-      console.log(`🔄 Making token request (${contextId}) to:`, discovery.tokenEndpoint);
+      logDebug('Making token request to', discovery.tokenEndpoint);
 
       const response = await fetch(discovery.tokenEndpoint, {
         method: 'POST',
@@ -277,12 +243,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
       if (!response.ok) {
         const errorText = await response.text();
-        console.error(`❌ Token exchange failed (${contextId}):`, errorText);
-        throw new Error(`Token exchange failed: ${response.status} - ${errorText}`);
+        logDebug('Token exchange failed', { status: response.status, error: errorText });
+        throw new Error(`Token exchange failed: ${response.status}`);
       }
 
       const tokens = await response.json();
-      console.log(`✅ Token exchange successful (${contextId})`);
+      logDebug('Token exchange successful');
 
       // Decode JWT to get user info
       const payload = decodeJWT(tokens.access_token);
@@ -297,14 +263,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         username: payload.preferred_username,
       };
 
-      console.log(`✅ User authenticated (${contextId}):`, user.email || user.username);
+      logDebug('User authenticated', { email: user.email });
 
       // Store securely
-      await SecureStore.setItemAsync('accessToken', tokens.access_token);
-      await SecureStore.setItemAsync('userData', JSON.stringify(user));
-      console.log(`💾 Tokens saved to secure storage (${contextId})`);
+      await Promise.all([
+        SecureStore.setItemAsync('accessToken', tokens.access_token),
+        SecureStore.setItemAsync('userData', JSON.stringify(user))
+      ]);
 
-      // Update state
       updateState({
         accessToken: tokens.access_token,
         isAuthenticated: true,
@@ -313,10 +279,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         isLoading: false,
       });
 
-      console.log(`🎉 Authentication completed successfully (${contextId})!`);
+      logDebug('Authentication completed successfully!');
 
     } catch (error: any) {
-      console.error(`❌ Token exchange error (${contextId}):`, error);
+      logDebug('Token exchange error', error);
       updateState({ 
         error: error.message || 'Failed to complete authentication',
         isLoading: false,
@@ -324,9 +290,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   };
 
-  const signOut = async () => {
+  const signOut = useCallback(async () => {
     try {
-      console.log(`🚪 Signing out (${contextId})...`);
+      logDebug('Signing out...');
       
       await clearStoredAuth();
       
@@ -338,28 +304,27 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         error: null,
       });
 
-      console.log(`✅ Signed out successfully (${contextId})`);
+      logDebug('Signed out successfully');
     } catch (error) {
-      console.error(`❌ Sign out error (${contextId}):`, error);
+      logDebug('Sign out error', error);
     }
-  };
+  }, [updateState, logDebug]);
 
-  const clearError = () => {
+  const clearError = useCallback(() => {
     updateState({ error: null });
-  };
+  }, [updateState]);
 
-  const value: AuthContextValue = {
+  // ✅ Memoize context value to prevent unnecessary re-renders
+  const contextValue = useMemo((): AuthContextValue => ({
     ...state,
     signIn,
     signOut,
     clearError,
-    contextId,
-    renderCount: renderCount.current,
     isDiscoveryReady,
-  };
+  }), [state, signIn, signOut, clearError, isDiscoveryReady]);
 
   return (
-    <AuthContext.Provider value={value}>
+    <AuthContext.Provider value={contextValue}>
       {children}
     </AuthContext.Provider>
   );
@@ -370,8 +335,5 @@ export function useAuth(): AuthContextValue {
   if (!context) {
     throw new Error('useAuth must be used within an AuthProvider');
   }
-  
-  console.log(`🎣 useAuth called - Context ID: ${context.contextId}, Render: ${context.renderCount}`);
-  
   return context;
 }

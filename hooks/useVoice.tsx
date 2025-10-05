@@ -1,4 +1,4 @@
-// hooks/useVoice.tsx - FIXED: Ensure accessToken is passed to all API calls
+// hooks/useVoice.tsx - FINAL FIX: Send parameters as FormData fields
 import React, { createContext, useCallback, useContext, useRef, useState, useEffect } from 'react';
 import { Platform, Alert } from 'react-native';
 import { Audio } from 'expo-av';
@@ -100,17 +100,17 @@ export function VoiceProvider({ children }: { children: React.ReactNode }) {
           extension: '.m4a',
           outputFormat: Audio.AndroidOutputFormat.MPEG_4,
           audioEncoder: Audio.AndroidAudioEncoder.AAC,
-          sampleRate: 22050,
+          sampleRate: 44100, // Higher sample rate for better quality
           numberOfChannels: 1,
-          bitRate: 64000,
+          bitRate: 128000, // Higher bit rate
         },
         ios: {
           extension: '.m4a',
           outputFormat: Audio.IOSOutputFormat.MPEG4AAC,
-          audioQuality: Audio.IOSAudioQuality.MEDIUM,
-          sampleRate: 22050,
+          audioQuality: Audio.IOSAudioQuality.HIGH, // Higher quality
+          sampleRate: 44100, // Higher sample rate
           numberOfChannels: 1,
-          bitRate: 64000,
+          bitRate: 128000, // Higher bit rate
         },
       });
 
@@ -266,17 +266,30 @@ export function VoiceProvider({ children }: { children: React.ReactNode }) {
 
     try {
       const formData = new FormData();
-      formData.append('audio', {
+      
+      // 🔧 CRITICAL FIX: Audio file with correct field name
+      formData.append('audio_file', {
         uri: audioUri,
         name: 'recording.m4a',
         type: 'audio/m4a',
       } as any);
+      
+      // 🔧 FINAL FIX: Add parameters as FormData fields (not URL params)
+      formData.append('use_vad', 'false');
+      formData.append('chunk_audio', 'false'); 
+      formData.append('temperature', '0.0');
+      formData.append('task', 'transcribe');
+      formData.append('notify_orchestrator', 'true');
+      // Don't append language - let it auto-detect
 
       console.log('📤 Sending STT request:', {
         endpoint: sttEndpoint,
         hasAuth: !!token,
         authPrefix: token.substring(0, 20) + '...',
         fileUri: audioUri,
+        useVad: false,
+        chunkAudio: false,
+        parameters: 'sent as FormData fields'
       });
 
       const response = await fetch(sttEndpoint, {
@@ -305,7 +318,17 @@ export function VoiceProvider({ children }: { children: React.ReactNode }) {
       const transcription = data.text || data.transcription || data.transcript || '';
       
       if (!transcription.trim()) {
-        throw new Error('STT returned empty transcription');
+        console.error('❌ Empty transcription received. Response data:', data);
+        console.error('💡 Backend VAD status:', data.performance_metrics?.vad_enabled);
+        console.error('💡 Audio duration processed:', data.performance_metrics?.audio_duration || 'unknown');
+        console.error('💡 Detected language:', data.language);
+        console.error('💡 This could be due to:');
+        console.error('  1. Audio too quiet or no speech detected');
+        console.error('  2. Audio format not supported');
+        console.error('  3. Recording duration too short');
+        console.error('  4. Background noise interfering');
+        console.error('  5. VAD still enabled despite parameter');
+        throw new Error('STT returned empty transcription - please speak louder and closer to the microphone');
       }
 
       return transcription;

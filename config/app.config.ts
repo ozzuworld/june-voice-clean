@@ -14,13 +14,13 @@ const APP_CONFIG = {
 
   SERVICES: {
     orchestrator: 'https://api.ozzu.world',
-    stt: 'https://tt.ozzu.world',
+    stt: 'https://stt.ozzu.world',
     tts: 'https://tts.ozzu.world',
     idp: 'https://idp.ozzu.world',
   },
 
   ENDPOINTS: {
-    CHAT: '/v1/conversation',
+    CHAT: '/v1/chat',
     STT: '/v1/transcribe',
     TTS: '/tts/generate',
     VOICE_PROCESS: '/v1/voice-process',

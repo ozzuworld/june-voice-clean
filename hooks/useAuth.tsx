@@ -1,10 +1,10 @@
-// hooks/useAuth.tsx - CORRECTED VERSION
+// hooks/useAuth.tsx - ENHANCED DEBUG VERSION
 import React, { createContext, useContext, useEffect, useState, useRef, useMemo, useCallback } from 'react';
 import * as WebBrowser from 'expo-web-browser';
 import * as SecureStore from 'expo-secure-store';
 import { makeRedirectUri, useAuthRequest, useAutoDiscovery } from 'expo-auth-session';
 import { decodeJWT } from '@/utils/jwt';
-import APP_CONFIG from '@/config/app.config'; // ✅ IMPORT CONFIG
+import APP_CONFIG from '@/config/app.config';
 
 WebBrowser.maybeCompleteAuthSession();
 
@@ -30,7 +30,7 @@ interface AuthContextValue {
 const AuthContext = createContext<AuthContextValue | undefined>(undefined);
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
-  // ✅ Generate stable context ID
+  // Generate stable context ID
   const contextId = useRef(`ctx_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`).current;
 
   const [state, setState] = useState({
@@ -41,23 +41,37 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     error: null as string | null,
   });
 
-  // ✅ USE CONFIG VALUES - Not hardcoded
+  // USE CONFIG VALUES
   const keycloakUrl = APP_CONFIG.KEYCLOAK_URL;
   const realm = APP_CONFIG.KEYCLOAK.REALM;
   const clientId = APP_CONFIG.KEYCLOAK.CLIENT_ID;
   const discoveryUrl = `${keycloakUrl}/realms/${realm}`;
 
-  // ✅ Auto-discover Keycloak endpoints using config
+  // Auto-discover Keycloak endpoints using config
   const discovery = useAutoDiscovery(discoveryUrl);
 
-  // ✅ Create redirect URI using config
-  const redirectUri = useMemo(() => 
-    makeRedirectUri({
+  // 🐛 DEBUG: Create redirect URI with extensive logging
+  const redirectUri = useMemo(() => {
+    const uri = makeRedirectUri({
       scheme: APP_CONFIG.REDIRECT_SCHEME,
       path: 'auth/callback',
-    }), []);
+    });
+    
+    // 🔍 DETAILED DEBUG LOGGING
+    console.log('🔍 [REDIRECT URI DEBUG] ==================')
+    console.log('🔍 Scheme from config:', APP_CONFIG.REDIRECT_SCHEME);
+    console.log('🔍 Path:', 'auth/callback');
+    console.log('🔍 Generated URI:', uri);
+    console.log('🔍 makeRedirectUri options:', {
+      scheme: APP_CONFIG.REDIRECT_SCHEME,
+      path: 'auth/callback',
+    });
+    console.log('🔍 ========================================')
+    
+    return uri;
+  }, []);
 
-  // ✅ Only create auth request when discovery is ready
+  // Only create auth request when discovery is ready
   const [request, response, promptAsync] = useAuthRequest(
     {
       clientId: clientId,
@@ -71,14 +85,28 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const isDiscoveryReady = Boolean(discovery && request);
 
-  // ✅ Optimize logging for development only
+  // 🐛 DEBUG: Log auth request details when ready
+  useEffect(() => {
+    if (request && discovery) {
+      console.log('🔍 [AUTH REQUEST DEBUG] ==================');
+      console.log('🔍 Client ID:', clientId);
+      console.log('🔍 Redirect URI:', redirectUri);
+      console.log('🔍 Discovery URL:', discoveryUrl);
+      console.log('🔍 Auth Endpoint:', discovery.authorizationEndpoint);
+      console.log('🔍 Token Endpoint:', discovery.tokenEndpoint);
+      console.log('🔍 Request URL that will be opened:', request.url);
+      console.log('🔍 ========================================');
+    }
+  }, [request, discovery, clientId, redirectUri, discoveryUrl]);
+
+  // Optimize logging for development only
   const logDebug = useCallback((message: string, data?: any) => {
     if (APP_CONFIG.DEBUG.VERBOSE_LOGS && __DEV__) {
       console.log(`[Auth-${contextId.slice(-4)}] ${message}`, data || '');
     }
   }, [contextId]);
 
-  // ✅ Memoized state update to prevent unnecessary re-renders
+  // Memoized state update to prevent unnecessary re-renders
   const updateState = useCallback((updates: Partial<typeof state>) => {
     setState(prev => {
       const newState = { ...prev, ...updates };
@@ -92,9 +120,20 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     loadStoredAuth();
   }, []);
 
-  // Handle auth response
+  // Handle auth response with enhanced debugging
   useEffect(() => {
     if (response) {
+      console.log('🔍 [AUTH RESPONSE DEBUG] ==================')
+      console.log('🔍 Response type:', response.type);
+      console.log('🔍 Full response:', response);
+      
+      if (response.type === 'error') {
+        console.log('🔍 Error details:', response.params);
+        console.log('🔍 Error code:', response.params?.error);
+        console.log('🔍 Error description:', response.params?.error_description);
+      }
+      console.log('🔍 ========================================');
+      
       logDebug('Auth response received', response.type);
       
       if (response.type === 'success') {
@@ -102,7 +141,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       } else if (response.type === 'error') {
         logDebug('Auth error', response.params);
         updateState({
-          error: response.params.error_description || 'Authentication failed',
+          error: response.params.error_description || response.params.error || 'Authentication failed',
           isLoading: false,
         });
       } else if (response.type === 'cancel') {
@@ -165,6 +204,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const signIn = useCallback(async () => {
     try {
+      console.log('🔍 [SIGN IN DEBUG] ========================');
+      console.log('🔍 Starting sign in process...');
+      console.log('🔍 Discovery ready:', isDiscoveryReady);
+      console.log('🔍 Discovery object:', discovery);
+      console.log('🔍 Request object exists:', !!request);
+      console.log('🔍 Redirect URI being used:', redirectUri);
+      console.log('🔍 ========================================');
+      
       logDebug('Starting sign in...');
       
       if (!isDiscoveryReady) {
@@ -172,6 +219,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           ? 'Loading authentication service... Please wait.'
           : 'Authentication not ready. Please try again.';
         
+        console.log('🔍 Discovery not ready:', message);
         updateState({ error: message });
         
         // Auto-retry when discovery becomes ready
@@ -201,17 +249,32 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         isLoading: false,
       });
       
+      console.log('🔍 About to open browser with URL:', request?.url);
       logDebug('Opening browser for authentication...');
+      
+      // 🐛 DEBUG: Log the exact URL that will be opened
+      if (request?.url) {
+        console.log('🔍 [BROWSER URL DEBUG] ====================');
+        console.log('🔍 Full auth URL:', request.url);
+        const url = new URL(request.url);
+        console.log('🔍 URL params:');
+        url.searchParams.forEach((value, key) => {
+          console.log(`🔍   ${key}: ${value}`);
+        });
+        console.log('🔍 ========================================');
+      }
+      
       await promptAsync();
       
     } catch (error: any) {
+      console.log('🔍 Sign in error:', error);
       logDebug('Sign in error', error);
       updateState({ 
         error: error.message || 'Sign in failed',
         isLoading: false,
       });
     }
-  }, [isDiscoveryReady, discovery, promptAsync, updateState, logDebug, discoveryUrl]);
+  }, [isDiscoveryReady, discovery, promptAsync, updateState, logDebug, discoveryUrl, request, redirectUri]);
 
   const handleAuthSuccess = async (code: string) => {
     try {
@@ -231,6 +294,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         code_verifier: request.codeVerifier,
       };
 
+      console.log('🔍 [TOKEN EXCHANGE DEBUG] =================');
+      console.log('🔍 Token endpoint:', discovery.tokenEndpoint);
+      console.log('🔍 Token request params:', tokenRequest);
+      console.log('🔍 =========================================');
+
       logDebug('Making token request to', discovery.tokenEndpoint);
 
       const response = await fetch(discovery.tokenEndpoint, {
@@ -243,6 +311,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
       if (!response.ok) {
         const errorText = await response.text();
+        console.log('🔍 Token exchange failed:', { status: response.status, error: errorText });
         logDebug('Token exchange failed', { status: response.status, error: errorText });
         throw new Error(`Token exchange failed: ${response.status}`);
       }
@@ -282,6 +351,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       logDebug('Authentication completed successfully!');
 
     } catch (error: any) {
+      console.log('🔍 Token exchange error:', error);
       logDebug('Token exchange error', error);
       updateState({ 
         error: error.message || 'Failed to complete authentication',
@@ -314,7 +384,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     updateState({ error: null });
   }, [updateState]);
 
-  // ✅ Memoize context value to prevent unnecessary re-renders
+  // Memoize context value to prevent unnecessary re-renders
   const contextValue = useMemo((): AuthContextValue => ({
     ...state,
     signIn,

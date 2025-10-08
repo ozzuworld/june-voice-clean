@@ -1,89 +1,90 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useAuth } from './useAuth';
 import { useAudioPlayer } from './useAudioPlayer';
-import APP_CONFIG from '@/config/app.config';
+import * as FileSystem from 'expo-file-system';
 
 interface WebSocketMessage {
   type: 'connected' | 'text_response' | 'audio_response' | 'processing_status' | 'error' | 
-        'audio_stream_start' | 'audio_stream_complete' | 'audio_chunk';
+        'audio_stream_start' | 'audio_stream_complete' | 'processing_complete' | 'voice_transcript';
   text?: string;
   audio_data?: string;
   status?: string;
   message?: string;
   timestamp?: string;
-  // Binary streaming properties
+  transcript?: string;
+  session_id?: string;
+  user_id?: string;
+  authenticated?: boolean;
+  version?: string;
+  features?: string[];
   total_chunks?: number;
   total_bytes?: number;
   chunk_size?: number;
   format?: string;
   chunks_sent?: number;
   success?: boolean;
-  chunk_data?: string;
-  chunk_index?: number;
-  is_final?: boolean;
-  features?: string[];
 }
 
 interface AudioStreamState {
   isStreaming: boolean;
   totalChunks: number;
   receivedChunks: number;
-  audioBuffer: ArrayBuffer[];
   format: string;
 }
 
 export function useWebSocketChat() {
-  const { accessToken, user } = useAuth();
-  const { playAudioFromBinary, playAudioFromBase64 } = useAudioPlayer();
+  const { accessToken } = useAuth();
+  const { playAudioFromBinary } = useAudioPlayer();
+  
   const [isConnected, setIsConnected] = useState(false);
   const [messages, setMessages] = useState<any[]>([]);
   const [isProcessing, setIsProcessing] = useState(false);
+  const [sessionId, setSessionId] = useState<string | null>(null);
   const [audioStreamState, setAudioStreamState] = useState<AudioStreamState>({
     isStreaming: false,
     totalChunks: 0,
     receivedChunks: 0,
-    audioBuffer: [],
     format: 'wav'
   });
   
   const wsRef = useRef<WebSocket | null>(null);
   const binaryChunkBuffer = useRef<Uint8Array[]>([]);
 
-  // Connect to orchestrator WebSocket
   const connect = useCallback(() => {
-    if (!accessToken) return;
+    if (!accessToken) {
+      console.log('❌ No access token available');
+      return;
+    }
     
     const wsUrl = `wss://api.ozzu.world/ws?token=Bearer%20${accessToken}`;
-    wsRef.current = new WebSocket(wsUrl);
+    console.log('🔌 Connecting WebSocket...');
     
-    wsRef.current.binaryType = 'arraybuffer'; // Enable binary message support
+    wsRef.current = new WebSocket(wsUrl);
+    wsRef.current.binaryType = 'arraybuffer';
     
     wsRef.current.onopen = () => {
       setIsConnected(true);
-      console.log('🔌 WebSocket connected to orchestrator');
-      
-      // Send audio preferences
-      wsRef.current?.send(JSON.stringify({
-        type: 'audio_preference',
-        prefer_binary: true,
-        prefer_chunked: true,
-        timestamp: new Date().toISOString()
-      }));
+      console.log('✅ WebSocket connected');
     };
     
     wsRef.current.onmessage = (event) => {
       if (typeof event.data === 'string') {
-        // Handle JSON text messages
-        const data: WebSocketMessage = JSON.parse(event.data);
-        handleWebSocketMessage(data);
-      } else {
-        // Handle binary messages (audio chunks)
-        handleBinaryMessage(event.data as ArrayBuffer);
+        try {
+          const data: WebSocketMessage = JSON.parse(event.data);
+          console.log('📨 WebSocket message:', data.type);
+          handleWebSocketMessage(data);
+        } catch (error) {
+          console.error('❌ JSON parse error:', error);
+        }
+      } else if (event.data instanceof ArrayBuffer) {
+        console.log('🎵 Received binary chunk:', event.data.byteLength, 'bytes');
+        handleBinaryMessage(event.data);
       }
     };
     
     wsRef.current.onclose = () => {
       setIsConnected(false);
+      setSessionId(null);
       setAudioStreamState(prev => ({ ...prev, isStreaming: false }));
       binaryChunkBuffer.current = [];
       console.log('🔌 WebSocket disconnected');
@@ -95,11 +96,20 @@ export function useWebSocketChat() {
   }, [accessToken]);
 
   const handleWebSocketMessage = (data: WebSocketMessage) => {
-    console.log('📨 WebSocket message:', data.type);
-    
     switch (data.type) {
       case 'connected':
-        console.log('✅ Connected with features:', data.features);
+        setSessionId(data.session_id || null);
+        console.log('✅ WebSocket session established:', data.session_id);
+        
+        // Send audio preferences
+        if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
+          wsRef.current.send(JSON.stringify({
+            type: 'audio_preference',
+            prefer_binary: true,
+            prefer_chunked: true,
+            timestamp: new Date().toISOString()
+          }));
+        }
         break;
         
       case 'text_response':
@@ -111,10 +121,16 @@ export function useWebSocketChat() {
         }]);
         break;
         
-      case 'audio_response':
-        // Legacy Base64 audio (fallback)
-        if (data.audio_data) {
-          playAudioFromBase64(data.audio_data);
+      case 'voice_transcript':
+        console.log('🎙️ Voice transcript received:', data.transcript);
+        if (data.transcript) {
+          setMessages(prev => [...prev, {
+            id: `user-voice-${Date.now()}`,
+            text: data.transcript,
+            isUser: true,
+            timestamp: new Date(),
+            isVoice: true
+          }]);
         }
         break;
         
@@ -124,7 +140,6 @@ export function useWebSocketChat() {
           isStreaming: true,
           totalChunks: data.total_chunks || 0,
           receivedChunks: 0,
-          audioBuffer: [],
           format: data.format || 'wav'
         });
         binaryChunkBuffer.current = [];
@@ -133,37 +148,34 @@ export function useWebSocketChat() {
       case 'audio_stream_complete':
         console.log(`✅ Audio stream complete: ${data.chunks_sent}/${audioStreamState.totalChunks} chunks`);
         if (data.success && binaryChunkBuffer.current.length > 0) {
-          // Combine all binary chunks and play
           const completeAudio = combineAudioChunks(binaryChunkBuffer.current);
+          console.log('🔊 Playing combined audio:', completeAudio.byteLength, 'bytes');
           playAudioFromBinary(completeAudio, audioStreamState.format);
         }
         setAudioStreamState(prev => ({ ...prev, isStreaming: false }));
         binaryChunkBuffer.current = [];
         break;
         
-      case 'audio_chunk':
-        // Legacy Base64 chunks (fallback)
-        if (data.chunk_data) {
-          // Store chunk for later assembly
-          setAudioStreamState(prev => ({
-            ...prev,
-            receivedChunks: prev.receivedChunks + 1
-          }));
-        }
+      case 'processing_status':
+        const isStillProcessing = data.status !== 'complete' && data.status !== 'processing_complete';
+        setIsProcessing(isStillProcessing);
+        console.log('⏳ Processing status:', data.status, data.message);
         break;
         
-      case 'processing_status':
-        setIsProcessing(data.status !== 'complete' && data.status !== 'processing_complete');
+      case 'processing_complete':
+        setIsProcessing(false);
         break;
         
       case 'error':
         console.error('❌ WebSocket error:', data.message);
         break;
+        
+      default:
+        console.log('📨 Unhandled message type:', data.type);
     }
   };
 
   const handleBinaryMessage = (arrayBuffer: ArrayBuffer) => {
-    // Handle binary audio chunks
     const chunk = new Uint8Array(arrayBuffer);
     binaryChunkBuffer.current.push(chunk);
     
@@ -172,20 +184,11 @@ export function useWebSocketChat() {
       receivedChunks: prev.receivedChunks + 1
     }));
     
-    console.log(`🎵 Received binary chunk ${binaryChunkBuffer.current.length}/${audioStreamState.totalChunks}`);
-    
-    // Optional: Start playing audio as soon as we have enough chunks
-    if (binaryChunkBuffer.current.length >= 5 && binaryChunkBuffer.current.length === audioStreamState.totalChunks) {
-      const completeAudio = combineAudioChunks(binaryChunkBuffer.current);
-      playAudioFromBinary(completeAudio, audioStreamState.format);
-    }
+    console.log(`🎵 Binary chunk ${binaryChunkBuffer.current.length}/${audioStreamState.totalChunks}`);
   };
 
   const combineAudioChunks = (chunks: Uint8Array[]): ArrayBuffer => {
-    // Calculate total size
     const totalSize = chunks.reduce((sum, chunk) => sum + chunk.length, 0);
-    
-    // Create combined buffer
     const combinedArray = new Uint8Array(totalSize);
     let offset = 0;
     
@@ -214,7 +217,51 @@ export function useWebSocketChat() {
     }));
   }, [isConnected]);
 
-  // Cleanup on unmount
+  // NEW: Send voice message directly to STT service with session correlation
+  const sendVoiceMessage = useCallback(async (audioUri: string) => {
+    if (!sessionId || !isConnected) {
+      console.error('❌ No session ID or not connected');
+      return;
+    }
+
+    try {
+      console.log('🎙️ Processing voice message:', audioUri);
+      setIsProcessing(true);
+      
+      // Read audio file as base64
+      const audioBase64 = await FileSystem.readAsStringAsync(audioUri, {
+        encoding: FileSystem.EncodingType.Base64,
+      });
+
+      // Send directly to STT service with session correlation
+      const response = await fetch('https://api.ozzu.world/stt/v1/transcribe', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${accessToken}`,
+        },
+        body: JSON.stringify({
+          audio_data: audioBase64,
+          format: 'mp4', // or 'wav' depending on your recording format
+          language: 'en',
+          session_id: sessionId, // KEY: Include session ID for correlation
+          webhook_url: `https://api.ozzu.world/orchestrator/v1/stt/webhook`,
+        }),
+      });
+
+      if (response.ok) {
+        console.log('✅ Voice message sent for STT processing');
+      } else {
+        console.error('❌ STT request failed:', response.status);
+        setIsProcessing(false);
+      }
+      
+    } catch (error) {
+      console.error('❌ Failed to send voice message:', error);
+      setIsProcessing(false);
+    }
+  }, [sessionId, isConnected, accessToken]);
+
   useEffect(() => {
     return () => {
       if (wsRef.current) {
@@ -229,7 +276,9 @@ export function useWebSocketChat() {
     messages,
     isProcessing,
     audioStreamState,
+    sessionId,
     connect,
     sendTextMessage,
+    sendVoiceMessage, // NEW: Export voice message sender
   };
 }

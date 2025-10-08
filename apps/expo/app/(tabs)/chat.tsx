@@ -1,4 +1,4 @@
-// app/(tabs)/chat.tsx - Enhanced Ring Design with Real-time Audio Streaming
+// app/(tabs)/chat.tsx - Enhanced Ring Design with REAL Audio Streaming
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import {
   View,
@@ -15,6 +15,7 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { Audio } from 'expo-av';
+import * as FileSystem from 'expo-file-system';
 import { useAuth } from '@/hooks/useAuth';
 import { useWebSocketChat } from '@/hooks/useWebSocketChat';
 
@@ -38,9 +39,13 @@ export default function ChatScreen() {
     isProcessing, 
     audioStreamState,
     sessionId,
+    audioPreferencesSet, // NEW
     connect,
     sendTextMessage,
-    sendVoiceMessage 
+    sendVoiceMessage,
+    sendAudioChunk, // NEW
+    startAudioStreaming: startStreamingMode, // NEW
+    stopAudioStreaming: stopStreamingMode, // NEW
   } = useWebSocketChat();
   
   const [isListening, setIsListening] = useState(false);
@@ -52,6 +57,9 @@ export default function ChatScreen() {
   const flatListRef = useRef<FlatList>(null);
   const recordingRef = useRef<Audio.Recording | null>(null);
   const streamingIntervalRef = useRef<NodeJS.Timeout | null>(null);
+  const chunkIntervalRef = useRef<NodeJS.Timeout | null>(null);
+  const recordingStartTime = useRef<number>(0);
+  const lastChunkTime = useRef<number>(0);
   const chatAnimatedValue = useRef(new Animated.Value(0)).current;
   const menuAnimatedValue = useRef(new Animated.Value(0)).current;
   
@@ -219,10 +227,75 @@ export default function ChatScreen() {
     }).start();
   };
 
-  // Real-time Audio Streaming Functions
+  // Extract real audio chunks from the ongoing recording
+  const extractAudioChunk = useCallback(async () => {
+    if (!recordingRef.current || !isStreaming) return;
+
+    try {
+      const currentTime = Date.now();
+      
+      // Check if we have recorded enough audio for a chunk (1 second minimum)
+      if (currentTime - lastChunkTime.current < 1000) return;
+
+      console.log('🎤 [REAL AUDIO] Extracting audio chunk from ongoing recording...');
+
+      // Get the current recording status
+      const status = await recordingRef.current.getStatusAsync();
+      
+      if (!status.isRecording) return;
+
+      console.log('🎤 [REAL AUDIO] Recording duration:', status.durationMillis, 'ms');
+
+      // Temporarily pause and get the current audio data
+      await recordingRef.current.pauseAsync();
+      const tempUri = recordingRef.current.getURI();
+      
+      if (tempUri) {
+        // Read the current audio file as base64
+        const audioBase64 = await FileSystem.readAsStringAsync(tempUri, {
+          encoding: FileSystem.EncodingType.Base64,
+        });
+
+        // Convert base64 to ArrayBuffer for WebSocket
+        const binaryString = atob(audioBase64);
+        const bytes = new Uint8Array(binaryString.length);
+        for (let i = 0; i < binaryString.length; i++) {
+          bytes[i] = binaryString.charCodeAt(i);
+        }
+        
+        console.log('🎤 [REAL AUDIO] Extracted chunk size:', bytes.length, 'bytes');
+        
+        // Send the real audio chunk via WebSocket
+        const sent = sendAudioChunk(bytes.buffer);
+        
+        if (sent) {
+          console.log('✅ [REAL AUDIO] Real audio chunk sent successfully');
+          lastChunkTime.current = currentTime;
+        } else {
+          console.log('⏳ [REAL AUDIO] Real audio chunk queued for later sending');
+        }
+      }
+
+      // Resume recording
+      await recordingRef.current.startAsync();
+      
+    } catch (error) {
+      console.error('❌ [REAL AUDIO] Error extracting audio chunk:', error);
+      // Continue recording even if chunk extraction fails
+      try {
+        if (recordingRef.current) {
+          await recordingRef.current.startAsync();
+        }
+      } catch (resumeError) {
+        console.error('❌ [REAL AUDIO] Error resuming recording:', resumeError);
+      }
+    }
+  }, [isStreaming, sendAudioChunk]);
+
+  // Real-time Audio Streaming Functions - UPDATED for REAL audio
   const startAudioStreaming = async () => {
     try {
-      console.log('🎤 [AUDIO DEBUG] Starting audio streaming...');
+      console.log('🎤 [AUDIO DEBUG] Starting REAL audio streaming...');
       
       // Check WebSocket connection first
       if (!isConnected) {
@@ -252,6 +325,9 @@ export default function ChatScreen() {
 
       console.log('✅ [AUDIO DEBUG] Audio mode configured');
 
+      // Start real-time streaming mode in WebSocket
+      startStreamingMode();
+
       // Start the recording with streaming-optimized settings
       console.log('🎤 [AUDIO DEBUG] Starting actual audio recording...');
       
@@ -279,18 +355,23 @@ export default function ChatScreen() {
 
       const { recording } = await Audio.Recording.createAsync(recordingOptions);
       recordingRef.current = recording;
+      recordingStartTime.current = Date.now();
+      lastChunkTime.current = Date.now();
+      
       setIsListening(true);
       setIsStreaming(true);
 
       console.log('✅ [AUDIO DEBUG] Audio recording started successfully');
-      console.log('🎤 Started real-time audio streaming');
+      console.log('🎤 Started REAL audio streaming');
 
-      // For now, just simulate streaming without sending chunks
-      // This will help us debug the WebSocket connection first
+      // Start monitor for connection health
       startStreamingMonitor();
+      
+      // Start real audio chunk extraction
+      startRealAudioChunking();
 
     } catch (error) {
-      console.error('❌ [AUDIO DEBUG] Error starting audio streaming:', error);
+      console.error('❌ [AUDIO DEBUG] Error starting real audio streaming:', error);
       Alert.alert('Streaming Error', 'Failed to start voice streaming');
       setIsStreaming(false);
       setIsListening(false);
@@ -302,31 +383,51 @@ export default function ChatScreen() {
       clearInterval(streamingIntervalRef.current);
     }
 
-    // Monitor connection every 1 second during streaming
+    // Monitor connection and streaming status every 2 seconds
     streamingIntervalRef.current = setInterval(() => {
       if (!isConnected) {
         console.error('❌ [AUDIO DEBUG] WebSocket connection lost during streaming');
         stopAudioStreaming();
         return;
       }
-      console.log('🔄 [AUDIO DEBUG] Streaming monitor - connection alive');
-    }, 1000);
+      console.log('🔄 [AUDIO DEBUG] Streaming monitor - connection alive, chunks sent:', audioStreamState.sentChunks);
+    }, 2000);
   };
 
+  const startRealAudioChunking = () => {
+    if (chunkIntervalRef.current) {
+      clearInterval(chunkIntervalRef.current);
+    }
+
+    // Extract real audio chunks every 1.5 seconds
+    chunkIntervalRef.current = setInterval(() => {
+      extractAudioChunk();
+    }, 1500);
+  };
+
+  // Updated stop function
   const stopAudioStreaming = async () => {
     try {
-      console.log('🛑 [AUDIO DEBUG] Stopping audio streaming...');
+      console.log('🛑 [AUDIO DEBUG] Stopping real audio streaming...');
 
-      // Clear streaming interval
+      // Clear streaming intervals
       if (streamingIntervalRef.current) {
         clearInterval(streamingIntervalRef.current);
         streamingIntervalRef.current = null;
       }
 
+      if (chunkIntervalRef.current) {
+        clearInterval(chunkIntervalRef.current);
+        chunkIntervalRef.current = null;
+      }
+
       setIsListening(false);
       setIsStreaming(false);
       
-      // Stop and process recording
+      // Stop streaming mode in WebSocket
+      stopStreamingMode();
+
+      // Stop and process final recording
       if (recordingRef.current) {
         console.log('🛑 [AUDIO DEBUG] Stopping recording...');
         await recordingRef.current.stopAndUnloadAsync();
@@ -334,16 +435,17 @@ export default function ChatScreen() {
         recordingRef.current = null;
 
         if (uri) {
-          console.log('🎤 [AUDIO DEBUG] Processing recorded audio:', uri);
+          console.log('🎤 [AUDIO DEBUG] Processing final recorded audio:', uri);
+          
+          // Send the final complete recording for transcription
           await sendVoiceMessage(uri);
         }
       }
 
-      console.log('✅ [AUDIO DEBUG] Audio streaming stopped successfully');
-      console.log('🛾 Stopped audio streaming');
+      console.log('✅ [AUDIO DEBUG] Real audio streaming stopped successfully');
 
     } catch (error) {
-      console.error('❌ [AUDIO DEBUG] Error stopping audio streaming:', error);
+      console.error('❌ [AUDIO DEBUG] Error stopping real audio streaming:', error);
     }
   };
 
@@ -582,10 +684,21 @@ export default function ChatScreen() {
             </Text>
           </View>
 
+          {/* Audio Preferences Status */}
+          <View style={styles.menuItem}>
+            <View style={[
+              styles.connectionDot, 
+              { backgroundColor: audioPreferencesSet ? '#34C759' : '#FF9500' }
+            ]} />
+            <Text style={styles.menuItemText}>
+              Audio Prefs: {audioPreferencesSet ? 'Set' : 'Pending'}
+            </Text>
+          </View>
+
           {/* Session ID */}
           {sessionId && (
             <View style={styles.menuItem}>
-              <Ionicons name="fingerprint" size={20} color="#666" />
+              <Ionicons name="radio" size={20} color="#666" />
               <Text style={[styles.menuItemText, { fontSize: 12, color: '#666' }]}>
                 Session: {sessionId.slice(-8)}
               </Text>
@@ -595,7 +708,7 @@ export default function ChatScreen() {
           {/* Streaming Status */}
           <View style={styles.menuItem}>
             <Ionicons name="radio" size={20} color={isStreaming ? '#34C759' : '#666'} />
-            <Text style={styles.menuItemText}>Real-time Streaming</Text>
+            <Text style={styles.menuItemText}>REAL Audio Streaming</Text>
             <View style={[
               styles.toggleIndicator,
               { backgroundColor: isStreaming ? '#34C759' : '#666' }
@@ -603,14 +716,12 @@ export default function ChatScreen() {
           </View>
 
           {/* Audio Stream Progress */}
-          {audioStreamState.isStreaming && (
-            <View style={styles.menuItem}>
-              <Ionicons name="musical-notes" size={20} color="#FF9500" />
-              <Text style={styles.menuItemText}>
-                Audio: {audioStreamState.receivedChunks}/{audioStreamState.totalChunks}
-              </Text>
-            </View>
-          )}
+          <View style={styles.menuItem}>
+            <Ionicons name="musical-notes" size={20} color="#FF9500" />
+            <Text style={styles.menuItemText}>
+              Sent: {audioStreamState.sentChunks} | Recv: {audioStreamState.receivedChunks}
+            </Text>
+          </View>
 
           {/* Conversation Mode Toggle */}
           <TouchableOpacity

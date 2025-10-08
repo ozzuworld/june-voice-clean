@@ -5,7 +5,8 @@ import * as FileSystem from 'expo-file-system';
 
 interface WebSocketMessage {
   type: 'connected' | 'text_response' | 'audio_response' | 'processing_status' | 'error' | 
-        'audio_stream_start' | 'audio_stream_complete' | 'processing_complete' | 'voice_transcript';
+        'audio_stream_start' | 'audio_stream_complete' | 'processing_complete' | 'voice_transcript' |
+        'audio_preference_ack'; // Add acknowledgment type
   text?: string;
   audio_data?: string;
   status?: string;
@@ -23,6 +24,11 @@ interface WebSocketMessage {
   format?: string;
   chunks_sent?: number;
   success?: boolean;
+  audio_preferences?: {
+    binary_supported: boolean;
+    chunked_supported: boolean;
+    max_chunk_size?: number;
+  };
 }
 
 interface AudioStreamState {
@@ -30,6 +36,7 @@ interface AudioStreamState {
   totalChunks: number;
   receivedChunks: number;
   format: string;
+  sentChunks: number; // Track sent chunks
 }
 
 export function useWebSocketChat() {
@@ -44,11 +51,15 @@ export function useWebSocketChat() {
     isStreaming: false,
     totalChunks: 0,
     receivedChunks: 0,
-    format: 'wav'
+    format: 'wav',
+    sentChunks: 0
   });
+  const [audioPreferencesSet, setAudioPreferencesSet] = useState(false);
   
   const wsRef = useRef<WebSocket | null>(null);
   const binaryChunkBuffer = useRef<Uint8Array[]>([]);
+  const audioChunkQueue = useRef<ArrayBuffer[]>([]);
+  const isStreamingAudio = useRef(false);
 
   const connect = useCallback(() => {
     if (!accessToken) {
@@ -64,6 +75,7 @@ export function useWebSocketChat() {
     
     wsRef.current.onopen = () => {
       setIsConnected(true);
+      setAudioPreferencesSet(false);
       console.log('✅ WebSocket connected');
     };
     
@@ -85,8 +97,11 @@ export function useWebSocketChat() {
     wsRef.current.onclose = () => {
       setIsConnected(false);
       setSessionId(null);
-      setAudioStreamState(prev => ({ ...prev, isStreaming: false }));
+      setAudioStreamState(prev => ({ ...prev, isStreaming: false, sentChunks: 0 }));
+      setAudioPreferencesSet(false);
       binaryChunkBuffer.current = [];
+      audioChunkQueue.current = [];
+      isStreamingAudio.current = false;
       console.log('🔌 WebSocket disconnected');
     };
     
@@ -94,6 +109,45 @@ export function useWebSocketChat() {
       console.error('🔌 WebSocket error:', error);
     };
   }, [accessToken]);
+
+  // Function to send audio chunk via WebSocket
+  const sendAudioChunk = useCallback((audioData: ArrayBuffer) => {
+    if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN && audioPreferencesSet) {
+      console.log('📤 [AUDIO STREAM] Sending audio chunk:', audioData.byteLength, 'bytes');
+      
+      // Send as binary data
+      wsRef.current.send(audioData);
+      
+      // Update sent chunks count
+      setAudioStreamState(prev => ({
+        ...prev,
+        sentChunks: prev.sentChunks + 1
+      }));
+      
+      return true;
+    } else {
+      console.log('❌ [AUDIO STREAM] Cannot send - WebSocket not ready or preferences not set');
+      console.log('   - WebSocket state:', wsRef.current?.readyState);
+      console.log('   - Preferences set:', audioPreferencesSet);
+      
+      // Queue the chunk for later sending
+      audioChunkQueue.current.push(audioData);
+      return false;
+    }
+  }, [audioPreferencesSet]);
+
+  // Function to flush queued audio chunks
+  const flushQueuedAudioChunks = useCallback(() => {
+    if (audioChunkQueue.current.length > 0 && audioPreferencesSet) {
+      console.log('🚀 [AUDIO STREAM] Flushing', audioChunkQueue.current.length, 'queued chunks');
+      
+      audioChunkQueue.current.forEach(chunk => {
+        sendAudioChunk(chunk);
+      });
+      
+      audioChunkQueue.current = [];
+    }
+  }, [sendAudioChunk, audioPreferencesSet]);
 
   const handleWebSocketMessage = (data: WebSocketMessage) => {
     switch (data.type) {
@@ -103,13 +157,31 @@ export function useWebSocketChat() {
         
         // Send audio preferences
         if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
+          console.log('📤 [AUDIO PREF] Sending audio preferences...');
           wsRef.current.send(JSON.stringify({
             type: 'audio_preference',
             prefer_binary: true,
             prefer_chunked: true,
+            chunk_size: 4096, // 4KB chunks
+            format: 'wav',
+            sample_rate: 16000,
+            channels: 1,
             timestamp: new Date().toISOString()
           }));
         }
+        break;
+      
+      case 'audio_preference_ack':
+        console.log('✅ [AUDIO PREF] Audio preferences acknowledged by server');
+        if (data.audio_preferences) {
+          console.log('   - Binary supported:', data.audio_preferences.binary_supported);
+          console.log('   - Chunked supported:', data.audio_preferences.chunked_supported);
+          console.log('   - Max chunk size:', data.audio_preferences.max_chunk_size);
+        }
+        setAudioPreferencesSet(true);
+        
+        // Flush any queued audio chunks
+        flushQueuedAudioChunks();
         break;
         
       case 'text_response':
@@ -140,7 +212,8 @@ export function useWebSocketChat() {
           isStreaming: true,
           totalChunks: data.total_chunks || 0,
           receivedChunks: 0,
-          format: data.format || 'wav'
+          format: data.format || 'wav',
+          sentChunks: 0
         });
         binaryChunkBuffer.current = [];
         break;
@@ -168,10 +241,22 @@ export function useWebSocketChat() {
         
       case 'error':
         console.error('❌ WebSocket error:', data.message);
+        if (data.message?.includes('Unknown message type: audio_preference')) {
+          console.log('💡 [AUDIO PREF] Server does not support audio_preference message yet');
+          // Set preferences as "acknowledged" anyway to enable streaming
+          setAudioPreferencesSet(true);
+          flushQueuedAudioChunks();
+        }
         break;
         
       default:
         console.log('📨 Unhandled message type:', data.type);
+        // If we get an error about unknown message type, handle it gracefully
+        if (data.type === undefined && data.message?.includes('audio_preference')) {
+          console.log('💡 [AUDIO PREF] Treating as preferences acknowledged due to error message');
+          setAudioPreferencesSet(true);
+          flushQueuedAudioChunks();
+        }
     }
   };
 
@@ -217,7 +302,7 @@ export function useWebSocketChat() {
     }));
   }, [isConnected]);
 
-  // NEW: Send voice message directly to STT service with session correlation
+  // Send voice message directly to STT service with session correlation
   const sendVoiceMessage = useCallback(async (audioUri: string) => {
     if (!sessionId || !isConnected) {
       console.error('❌ No session ID or not connected');
@@ -262,12 +347,44 @@ export function useWebSocketChat() {
     }
   }, [sessionId, isConnected, accessToken]);
 
+  // Start real-time audio streaming
+  const startAudioStreaming = useCallback(() => {
+    console.log('🎤 [AUDIO STREAM] Starting real-time audio streaming mode');
+    isStreamingAudio.current = true;
+    setAudioStreamState(prev => ({
+      ...prev,
+      isStreaming: true,
+      sentChunks: 0
+    }));
+  }, []);
+
+  // Stop real-time audio streaming
+  const stopAudioStreaming = useCallback(() => {
+    console.log('🛑 [AUDIO STREAM] Stopping real-time audio streaming mode');
+    isStreamingAudio.current = false;
+    setAudioStreamState(prev => ({
+      ...prev,
+      isStreaming: false
+    }));
+    
+    // Send end-of-stream marker
+    if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN && audioPreferencesSet) {
+      wsRef.current.send(JSON.stringify({
+        type: 'audio_stream_end',
+        timestamp: new Date().toISOString(),
+        total_chunks_sent: audioStreamState.sentChunks
+      }));
+    }
+  }, [audioPreferencesSet, audioStreamState.sentChunks]);
+
   useEffect(() => {
     return () => {
       if (wsRef.current) {
         wsRef.current.close();
       }
       binaryChunkBuffer.current = [];
+      audioChunkQueue.current = [];
+      isStreamingAudio.current = false;
     };
   }, []);
 
@@ -277,8 +394,13 @@ export function useWebSocketChat() {
     isProcessing,
     audioStreamState,
     sessionId,
+    audioPreferencesSet,
+    isStreamingAudio: isStreamingAudio.current,
     connect,
     sendTextMessage,
-    sendVoiceMessage, // NEW: Export voice message sender
+    sendVoiceMessage,
+    sendAudioChunk, // NEW: Export for real-time streaming
+    startAudioStreaming, // NEW: Start streaming mode
+    stopAudioStreaming, // NEW: Stop streaming mode
   };
 }

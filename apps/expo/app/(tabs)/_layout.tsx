@@ -27,30 +27,9 @@ export default function TabLayout() {
       <Tabs.Screen
         name="chat"
         options={{
-          title: 'Chat',
-          tabBarIcon: ({ color }) => (
-            <TabBarIcon name="comment" color={color} />
-          ),
-        }}
-      />
-      
-      <Tabs.Screen
-        name="voice"
-        options={{
-          title: 'Voice',
+          title: 'Voice Chat',
           tabBarIcon: ({ color }) => (
             <TabBarIcon name="microphone" color={color} />
-          ),
-        }}
-      />
-      
-      {/* ✅ ADD THIS */}
-      <Tabs.Screen
-        name="debug"
-        options={{
-          title: 'Debug',
-          tabBarIcon: ({ color }) => (
-            <TabBarIcon name="bug" color={color} />
           ),
         }}
       />

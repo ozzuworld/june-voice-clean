@@ -1,38 +1,27 @@
 import React from 'react';
-import { Tabs } from 'expo-router';
-import { TabBarIcon } from '@/components/navigation/TabBarIcon';
+import { Stack } from 'expo-router';
 
 export default function TabLayout() {
   return (
-    <Tabs
+    <Stack
       screenOptions={{
         headerShown: false,
-        tabBarStyle: {
-          backgroundColor: '#000',
-          borderTopColor: '#333',
-          borderTopWidth: 1,
-        },
-        tabBarActiveTintColor: '#667eea',
-        tabBarInactiveTintColor: '#666',
       }}>
       
       {/* Hidden index route for navigation */}
-      <Tabs.Screen
+      <Stack.Screen
         name="index"
         options={{
-          href: null, // Hide from tab bar
+          headerShown: false,
         }}
       />
       
-      <Tabs.Screen
+      <Stack.Screen
         name="chat"
         options={{
-          title: 'Voice Chat',
-          tabBarIcon: ({ color }) => (
-            <TabBarIcon name="microphone" color={color} />
-          ),
+          headerShown: false,
         }}
       />
-    </Tabs>
+    </Stack>
   );
 }

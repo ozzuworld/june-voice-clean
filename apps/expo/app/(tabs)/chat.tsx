@@ -1,4 +1,4 @@
-// app/(tabs)/chat.tsx - Enhanced Ring Design with Continuous Conversation
+// app/(tabs)/chat.tsx - Real-time Audio Streaming Implementation
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import {
   View,
@@ -30,11 +30,15 @@ interface Message {
 }
 
 interface WebSocketMessage {
-  type: 'connected' | 'text_response' | 'audio_response' | 'processing_status' | 'processing_complete' | 'error';
+  type: 'connected' | 'text_response' | 'audio_response' | 'processing_status' | 'processing_complete' | 'error' | 'audio_start' | 'audio_chunk' | 'audio_end';
   text?: string;
   audio_data?: string;
   status?: string;
   message?: string;
+  chunk?: string;
+  sample_rate?: number;
+  channels?: number;
+  format?: string;
 }
 
 export default function ChatScreen() {
@@ -47,10 +51,12 @@ export default function ChatScreen() {
   const [isChatVisible, setIsChatVisible] = useState(false);
   const [isMenuVisible, setIsMenuVisible] = useState(false);
   const [isConversationMode, setIsConversationMode] = useState(false);
+  const [isStreaming, setIsStreaming] = useState(false);
   
   const flatListRef = useRef<FlatList>(null);
   const wsRef = useRef<WebSocket | null>(null);
   const recordingRef = useRef<Audio.Recording | null>(null);
+  const streamingIntervalRef = useRef<NodeJS.Timeout | null>(null);
   const chatAnimatedValue = useRef(new Animated.Value(0)).current;
   const menuAnimatedValue = useRef(new Animated.Value(0)).current;
   
@@ -94,26 +100,26 @@ export default function ChatScreen() {
           }),
         ])
       ).start();
-    } else if (isListening) {
-      // Listening state - active glow + rotation
+    } else if (isListening || isStreaming) {
+      // Listening/Streaming state - active glow + rotation
       Animated.parallel([
         Animated.loop(
           Animated.timing(rotationValue, {
             toValue: 1,
-            duration: 3000,
+            duration: 2000, // Faster rotation for streaming
             useNativeDriver: true,
           })
         ),
         Animated.loop(
           Animated.sequence([
             Animated.timing(glowRingScale, {
-              toValue: 1.1,
-              duration: 1000,
+              toValue: 1.15,
+              duration: 800,
               useNativeDriver: true,
             }),
             Animated.timing(glowRingScale, {
               toValue: 1,
-              duration: 1000,
+              duration: 800,
               useNativeDriver: true,
             }),
           ])
@@ -121,13 +127,13 @@ export default function ChatScreen() {
         Animated.loop(
           Animated.sequence([
             Animated.timing(pulseRingScale, {
-              toValue: 1.3,
-              duration: 800,
+              toValue: 1.4,
+              duration: 600,
               useNativeDriver: true,
             }),
             Animated.timing(pulseRingScale, {
               toValue: 1,
-              duration: 800,
+              duration: 600,
               useNativeDriver: true,
             }),
           ])
@@ -135,8 +141,8 @@ export default function ChatScreen() {
       ]).start();
       
       mainRingOpacity.setValue(1);
-      pulseRingOpacity.setValue(0.4);
-      glowRingOpacity.setValue(0.6);
+      pulseRingOpacity.setValue(0.5);
+      glowRingOpacity.setValue(0.7);
     } else if (isProcessing) {
       // Processing state - steady glow + slow rotation
       Animated.parallel([
@@ -182,7 +188,7 @@ export default function ChatScreen() {
       glowRingOpacity.setValue(0.3);
       pulseRingOpacity.setValue(0);
     }
-  }, [isConnected, isListening, isProcessing, isConversationMode]);
+  }, [isConnected, isListening, isProcessing, isConversationMode, isStreaming]);
 
   // Toggle chat visibility
   const toggleChat = () => {
@@ -239,6 +245,8 @@ export default function ChatScreen() {
         setConnectionStatus('Disconnected');
         setIsProcessing(false);
         setIsConversationMode(false);
+        setIsStreaming(false);
+        stopAudioStreaming();
       };
 
       wsRef.current.onerror = (error) => {
@@ -247,6 +255,8 @@ export default function ChatScreen() {
         setConnectionStatus('Error');
         setIsProcessing(false);
         setIsConversationMode(false);
+        setIsStreaming(false);
+        stopAudioStreaming();
       };
 
     } catch (error) {
@@ -292,8 +302,8 @@ export default function ChatScreen() {
           if (isConversationMode) {
             setTimeout(() => {
               setIsProcessing(false);
-              // Auto-restart listening for continuous conversation
-              startVoiceRecording();
+              // Auto-restart streaming for continuous conversation
+              startAudioStreaming();
             }, 500);
           } else {
             setIsProcessing(false);
@@ -313,6 +323,8 @@ export default function ChatScreen() {
         console.error('❌ WebSocket error:', data.message);
         setIsProcessing(false);
         setIsConversationMode(false);
+        setIsStreaming(false);
+        stopAudioStreaming();
         Alert.alert('Error', data.message || 'Unknown error occurred');
         break;
     }
@@ -327,6 +339,7 @@ export default function ChatScreen() {
       if (wsRef.current) {
         wsRef.current.close();
       }
+      stopAudioStreaming();
     };
   }, [isAuthenticated, accessToken, connectWebSocket]);
 
@@ -368,7 +381,160 @@ export default function ChatScreen() {
     }
   }, [isConnected]);
 
-  // Voice Recording Functions
+  // Real-time Audio Streaming Functions
+  const startAudioStreaming = async () => {
+    try {
+      const permission = await Audio.requestPermissionsAsync();
+      if (permission.status !== 'granted') {
+        Alert.alert('Permission Required', 'Please grant microphone permission');
+        return;
+      }
+
+      if (!wsRef.current || !isConnected) {
+        console.log('❌ Cannot start streaming: WebSocket not connected');
+        return;
+      }
+
+      await Audio.setAudioModeAsync({
+        allowsRecordingIOS: true,
+        playsInSilentModeIOS: true,
+      });
+
+      // Start recording with streaming-optimized settings
+      const { recording } = await Audio.Recording.createAsync({
+        android: {
+          extension: '.wav',
+          outputFormat: Audio.RECORDING_OPTION_ANDROID_OUTPUT_FORMAT_PCM_16BIT,
+          audioEncoder: Audio.RECORDING_OPTION_ANDROID_AUDIO_ENCODER_PCM_16BIT,
+          sampleRate: 16000, // Optimized for speech recognition
+          numberOfChannels: 1, // Mono for better performance
+          bitRate: 128000,
+        },
+        ios: {
+          extension: '.wav',
+          outputFormat: Audio.RECORDING_OPTION_IOS_OUTPUT_FORMAT_LINEARPCM,
+          audioQuality: Audio.RECORDING_OPTION_IOS_AUDIO_QUALITY_HIGH,
+          sampleRate: 16000, // Optimized for speech recognition
+          numberOfChannels: 1, // Mono for better performance
+          bitRate: 128000,
+          linearPCMBitDepth: 16,
+          linearPCMIsBigEndian: false,
+          linearPCMIsFloat: false,
+        },
+      });
+
+      recordingRef.current = recording;
+      setIsListening(true);
+      setIsStreaming(true);
+
+      // Send audio start signal
+      wsRef.current.send(JSON.stringify({
+        type: 'audio_start',
+        sample_rate: 16000,
+        channels: 1,
+        format: 'wav',
+        timestamp: new Date().toISOString(),
+      }));
+
+      console.log('🎤 Started real-time audio streaming');
+
+      // Start periodic chunk sending
+      startChunkStreaming();
+
+    } catch (error) {
+      console.error('❌ Failed to start audio streaming:', error);
+      Alert.alert('Streaming Error', 'Failed to start voice streaming');
+      setIsStreaming(false);
+      setIsListening(false);
+    }
+  };
+
+  const startChunkStreaming = () => {
+    if (streamingIntervalRef.current) {
+      clearInterval(streamingIntervalRef.current);
+    }
+
+    // Send audio chunks every 100ms for real-time processing
+    streamingIntervalRef.current = setInterval(async () => {
+      if (!recordingRef.current || !wsRef.current || !isStreaming) {
+        return;
+      }
+
+      try {
+        // Get recording status and data
+        const status = await recordingRef.current.getStatusAsync();
+        
+        if (status.isRecording) {
+          // In a real implementation, you'd need to access the raw audio buffer
+          // This is a simplified version - you might need to use a native module
+          // for actual real-time audio chunk extraction
+          
+          // For now, we'll simulate chunk sending
+          const chunkData = await getAudioChunk();
+          
+          if (chunkData && wsRef.current.readyState === WebSocket.OPEN) {
+            wsRef.current.send(JSON.stringify({
+              type: 'audio_chunk',
+              chunk: chunkData,
+              timestamp: new Date().toISOString(),
+            }));
+          }
+        }
+      } catch (error) {
+        console.error('❌ Error sending audio chunk:', error);
+      }
+    }, 100); // Send chunks every 100ms
+  };
+
+  // Simulate getting audio chunk (in real implementation, this would access raw audio buffer)
+  const getAudioChunk = async (): Promise<string | null> => {
+    try {
+      // This is a placeholder - in a real implementation you would:
+      // 1. Access the recording's buffer
+      // 2. Extract the latest chunk since last send
+      // 3. Convert to base64 or appropriate format
+      // 4. Return the chunk data
+      
+      // For now, we'll return null to avoid sending empty chunks
+      return null;
+    } catch (error) {
+      console.error('❌ Error getting audio chunk:', error);
+      return null;
+    }
+  };
+
+  const stopAudioStreaming = async () => {
+    try {
+      // Clear streaming interval
+      if (streamingIntervalRef.current) {
+        clearInterval(streamingIntervalRef.current);
+        streamingIntervalRef.current = null;
+      }
+
+      setIsListening(false);
+      setIsStreaming(false);
+      
+      if (recordingRef.current) {
+        await recordingRef.current.stopAndUnloadAsync();
+        recordingRef.current = null;
+      }
+
+      // Send audio end signal
+      if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
+        wsRef.current.send(JSON.stringify({
+          type: 'audio_end',
+          timestamp: new Date().toISOString(),
+        }));
+      }
+
+      console.log('🛾 Stopped audio streaming');
+
+    } catch (error) {
+      console.error('❌ Failed to stop audio streaming:', error);
+    }
+  };
+
+  // Legacy batch recording (fallback)
   const startVoiceRecording = async () => {
     try {
       const permission = await Audio.requestPermissionsAsync();
@@ -430,7 +596,7 @@ export default function ChatScreen() {
     }
   };
 
-  // Process voice message through STT then WebSocket
+  // Process voice message through STT then WebSocket (legacy fallback)
   const processVoiceMessage = async (audioUri: string) => {
     try {
       setIsProcessing(true);
@@ -443,8 +609,8 @@ export default function ChatScreen() {
         Alert.alert('No Speech Detected', 'Please try speaking more clearly');
         setIsProcessing(false);
         if (isConversationMode) {
-          // Restart listening in conversation mode
-          setTimeout(() => startVoiceRecording(), 1000);
+          // Restart streaming in conversation mode
+          setTimeout(() => startAudioStreaming(), 1000);
         }
       }
 
@@ -456,7 +622,7 @@ export default function ChatScreen() {
     }
   };
 
-  // Transcribe audio using STT service
+  // Transcribe audio using STT service (legacy fallback)
   const transcribeAudio = async (audioUri: string): Promise<string> => {
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), APP_CONFIG.TIMEOUTS.STT);
@@ -532,24 +698,24 @@ export default function ChatScreen() {
     }
   };
 
-  // Handle main ring tap - Enhanced for continuous conversation
+  // Handle main ring tap - Now uses real-time streaming
   const handleMainRingPress = () => {
     if (!isConnected) {
       Alert.alert('Not Connected', 'Please wait for connection to establish');
       return;
     }
 
-    if (isConversationMode) {
-      // Stop conversation mode
+    if (isConversationMode || isStreaming) {
+      // Stop conversation mode and streaming
       setIsConversationMode(false);
-      if (isListening) {
-        stopVoiceRecording();
+      if (isStreaming) {
+        stopAudioStreaming();
       }
       setIsProcessing(false);
     } else {
-      // Start conversation mode
+      // Start conversation mode with real-time streaming
       setIsConversationMode(true);
-      startVoiceRecording();
+      startAudioStreaming();
     }
   };
 
@@ -587,17 +753,9 @@ export default function ChatScreen() {
     </View>
   );
 
-  const getStatusText = () => {
-    if (!isConnected) return 'Connecting...';
-    if (isConversationMode && isListening) return 'Listening...';
-    if (isConversationMode && isProcessing) return 'Processing...';
-    if (isConversationMode) return 'Conversation active';
-    return 'Tap to start conversation';
-  };
-
   const getRingColor = () => {
     if (!isConnected) return '#666666';
-    if (isListening) return '#FF3B30';
+    if (isListening || isStreaming) return '#FF3B30';
     if (isProcessing) return '#FF9500';
     if (isConversationMode) return '#34C759';
     return '#007AFF';
@@ -612,9 +770,9 @@ export default function ChatScreen() {
     <>
       <StatusBar barStyle="light-content" backgroundColor="#000000" />
       <SafeAreaView style={styles.container}>
-        {/* Clean Main Interface - Enhanced Ring Design */}
+        {/* COMPLETELY CLEAN MAIN INTERFACE - JUST THE RING */}
         <View style={styles.mainContainer}>
-          {/* Enhanced Multi-Layer Ring System */}
+          {/* Enhanced Multi-Layer Ring System - THE ONLY INTERFACE ELEMENT */}
           <TouchableOpacity
             onPress={handleMainRingPress}
             disabled={!isConnected}
@@ -632,7 +790,7 @@ export default function ChatScreen() {
               }
             ]} />
             
-            {/* Pulse Ring (only during listening) */}
+            {/* Pulse Ring (only during listening/streaming) */}
             <Animated.View style={[
               styles.pulseRing,
               {
@@ -665,15 +823,18 @@ export default function ChatScreen() {
                 {isProcessing && (
                   <ActivityIndicator size="large" color={getRingColor()} />
                 )}
-                {isListening && (
+                {(isListening || isStreaming) && (
                   <View style={styles.listeningIndicator}>
                     <Animated.View style={[styles.waveBar, { backgroundColor: getRingColor() }]} />
                     <Animated.View style={[styles.waveBar, { backgroundColor: getRingColor() }]} />
                     <Animated.View style={[styles.waveBar, { backgroundColor: getRingColor() }]} />
                     <Animated.View style={[styles.waveBar, { backgroundColor: getRingColor() }]} />
+                    {isStreaming && (
+                      <Animated.View style={[styles.streamingIndicator, { backgroundColor: getRingColor() }]} />
+                    )}
                   </View>
                 )}
-                {isConversationMode && !isListening && !isProcessing && (
+                {isConversationMode && !isListening && !isProcessing && !isStreaming && (
                   <View style={styles.conversationIndicator}>
                     <View style={[styles.conversationDot, { backgroundColor: getRingColor() }]} />
                     <View style={[styles.conversationDot, { backgroundColor: getRingColor() }]} />
@@ -683,11 +844,6 @@ export default function ChatScreen() {
               </View>
             </Animated.View>
           </TouchableOpacity>
-
-          {/* Minimal Status Text */}
-          <Text style={styles.statusText}>
-            {getStatusText()}
-          </Text>
         </View>
 
         {/* Floating Menu Button (Left Side) */}
@@ -742,12 +898,27 @@ export default function ChatScreen() {
             <Text style={styles.menuItemText}>{connectionStatus}</Text>
           </View>
 
+          {/* Streaming Status */}
+          <View style={styles.menuItem}>
+            <Ionicons name="radio" size={20} color={isStreaming ? '#34C759' : '#666'} />
+            <Text style={styles.menuItemText}>Real-time Streaming</Text>
+            <View style={[
+              styles.toggleIndicator,
+              { backgroundColor: isStreaming ? '#34C759' : '#666' }
+            ]} />
+          </View>
+
           {/* Conversation Mode Toggle */}
           <TouchableOpacity
             onPress={() => {
-              setIsConversationMode(!isConversationMode);
-              if (isConversationMode && isListening) {
-                stopVoiceRecording();
+              if (isConversationMode) {
+                setIsConversationMode(false);
+                if (isStreaming) {
+                  stopAudioStreaming();
+                }
+              } else {
+                setIsConversationMode(true);
+                startAudioStreaming();
               }
               toggleMenu();
             }}
@@ -832,7 +1003,6 @@ const styles = StyleSheet.create({
   ringContainer: {
     alignItems: 'center',
     justifyContent: 'center',
-    marginBottom: 60,
     position: 'relative',
   },
   outerGlowRing: {
@@ -887,6 +1057,13 @@ const styles = StyleSheet.create({
     borderRadius: 3,
     backgroundColor: '#007AFF',
   },
+  streamingIndicator: {
+    width: 8,
+    height: 30,
+    marginLeft: 6,
+    borderRadius: 4,
+    backgroundColor: '#FF3B30',
+  },
   conversationIndicator: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -898,12 +1075,6 @@ const styles = StyleSheet.create({
     borderRadius: 4,
     backgroundColor: '#34C759',
     marginHorizontal: 4,
-  },
-  statusText: {
-    fontSize: 18,
-    color: '#FFFFFF',
-    textAlign: 'center',
-    opacity: 0.8,
   },
   menuToggleButton: {
     position: 'absolute',

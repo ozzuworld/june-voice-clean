@@ -1,4 +1,4 @@
-// app/(tabs)/chat.tsx - Simplified Voice Chat Focus
+// app/(tabs)/chat.tsx - Modern Dark UI with Collapsible Chat
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import {
   View,
@@ -9,13 +9,16 @@ import {
   StyleSheet,
   ActivityIndicator,
   Alert,
+  Animated,
+  Dimensions,
+  StatusBar,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { Audio } from 'expo-av';
 import { useAuth } from '@/hooks/useAuth';
-import { useColorScheme } from '@/hooks/useColorScheme';
-import { Colors } from '@/constants/Colors';
 import APP_CONFIG from '@/config/app.config';
+
+const { width, height } = Dimensions.get('window');
 
 interface Message {
   id: string;
@@ -35,16 +38,20 @@ interface WebSocketMessage {
 }
 
 export default function ChatScreen() {
-  const colorScheme = useColorScheme();
   const { user, signOut, accessToken, isAuthenticated } = useAuth();
   const [messages, setMessages] = useState<Message[]>([]);
   const [isListening, setIsListening] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
   const [isConnected, setIsConnected] = useState(false);
   const [connectionStatus, setConnectionStatus] = useState('Disconnected');
+  const [isChatVisible, setIsChatVisible] = useState(false);
+  
   const flatListRef = useRef<FlatList>(null);
   const wsRef = useRef<WebSocket | null>(null);
   const recordingRef = useRef<Audio.Recording | null>(null);
+  const chatAnimatedValue = useRef(new Animated.Value(0)).current;
+  const pulseAnimatedValue = useRef(new Animated.Value(1)).current;
+  const ringAnimatedValue = useRef(new Animated.Value(0)).current;
 
   // Auto-scroll to bottom
   useEffect(() => {
@@ -52,6 +59,62 @@ export default function ChatScreen() {
       setTimeout(() => flatListRef.current?.scrollToEnd({ animated: true }), 100);
     }
   }, [messages.length]);
+
+  // Pulse animation for voice button
+  useEffect(() => {
+    if (isListening || isProcessing) {
+      const pulseAnimation = Animated.loop(
+        Animated.sequence([
+          Animated.timing(pulseAnimatedValue, {
+            toValue: 1.1,
+            duration: 1000,
+            useNativeDriver: true,
+          }),
+          Animated.timing(pulseAnimatedValue, {
+            toValue: 1,
+            duration: 1000,
+            useNativeDriver: true,
+          }),
+        ])
+      );
+      pulseAnimation.start();
+      return () => pulseAnimation.stop();
+    } else {
+      Animated.timing(pulseAnimatedValue, {
+        toValue: 1,
+        duration: 300,
+        useNativeDriver: true,
+      }).start();
+    }
+  }, [isListening, isProcessing]);
+
+  // Ring animation for voice states
+  useEffect(() => {
+    if (isListening) {
+      Animated.loop(
+        Animated.timing(ringAnimatedValue, {
+          toValue: 1,
+          duration: 2000,
+          useNativeDriver: true,
+        })
+      ).start();
+    } else {
+      ringAnimatedValue.setValue(0);
+    }
+  }, [isListening]);
+
+  // Toggle chat visibility
+  const toggleChat = () => {
+    const toValue = isChatVisible ? 0 : 1;
+    setIsChatVisible(!isChatVisible);
+    
+    Animated.spring(chatAnimatedValue, {
+      toValue,
+      useNativeDriver: true,
+      tension: 100,
+      friction: 8,
+    }).start();
+  };
 
   // WebSocket Connection
   const connectWebSocket = useCallback(() => {
@@ -113,6 +176,10 @@ export default function ChatScreen() {
             status: 'sent',
           };
           setMessages(prev => [...prev, botMessage]);
+          // Auto-show chat when receiving response
+          if (!isChatVisible) {
+            toggleChat();
+          }
         }
         break;
 
@@ -121,7 +188,6 @@ export default function ChatScreen() {
           console.log('🔊 Received audio response, playing...');
           playAudioResponse(data.audio_data);
           
-          // Update the last bot message with audio data
           if (data.text) {
             setMessages(prev => prev.map(msg => 
               !msg.isUser && msg.text === data.text 
@@ -130,7 +196,6 @@ export default function ChatScreen() {
             ));
           }
           
-          // FIX: Reset processing state after audio response to re-enable button
           setIsProcessing(false);
         }
         break;
@@ -188,7 +253,6 @@ export default function ChatScreen() {
         timestamp: new Date().toISOString(),
       }));
 
-      // Update message status
       setMessages(prev => prev.map(msg => 
         msg.id === userMessage.id ? { ...msg, status: 'sent' } : msg
       ));
@@ -205,8 +269,6 @@ export default function ChatScreen() {
   // Voice Recording Functions
   const startVoiceRecording = async () => {
     try {
-      console.log('🎤 Starting voice recording...');
-      
       const permission = await Audio.requestPermissionsAsync();
       if (permission.status !== 'granted') {
         Alert.alert('Permission Required', 'Please grant microphone permission');
@@ -239,7 +301,6 @@ export default function ChatScreen() {
 
       recordingRef.current = recording;
       setIsListening(true);
-      console.log('✅ Recording started');
 
     } catch (error) {
       console.error('❌ Failed to start recording:', error);
@@ -251,7 +312,6 @@ export default function ChatScreen() {
     try {
       if (!recordingRef.current) return;
 
-      console.log('🛑 Stopping voice recording...');
       setIsListening(false);
       
       await recordingRef.current.stopAndUnloadAsync();
@@ -259,7 +319,6 @@ export default function ChatScreen() {
       recordingRef.current = null;
 
       if (uri) {
-        console.log('📁 Recording saved, processing...');
         await processVoiceMessage(uri);
       }
 
@@ -272,15 +331,11 @@ export default function ChatScreen() {
   // Process voice message through STT then WebSocket
   const processVoiceMessage = async (audioUri: string) => {
     try {
-      console.log('🎤 Processing voice message...');
       setIsProcessing(true);
 
-      // Step 1: Convert audio to text
       const transcription = await transcribeAudio(audioUri);
       
       if (transcription.trim()) {
-        console.log('📝 Transcription:', transcription);
-        // Step 2: Send transcription through WebSocket for AI response
         sendTextMessage(transcription);
       } else {
         Alert.alert('No Speech Detected', 'Please try speaking more clearly');
@@ -300,8 +355,6 @@ export default function ChatScreen() {
     const timeoutId = setTimeout(() => controller.abort(), APP_CONFIG.TIMEOUTS.STT);
 
     try {
-      console.log('📝 Sending audio to STT service...');
-      
       const formData = new FormData();
       formData.append('audio_file', {
         uri: audioUri,
@@ -333,8 +386,6 @@ export default function ChatScreen() {
       }
 
       const data = await response.json();
-      console.log('✅ STT response:', data);
-      
       return data.text || data.transcription || '';
 
     } catch (error: any) {
@@ -349,9 +400,6 @@ export default function ChatScreen() {
   // Play audio response
   const playAudioResponse = async (audioData: string) => {
     try {
-      console.log('🔊 Playing audio response...');
-      
-      // Set audio mode for playback
       await Audio.setAudioModeAsync({
         allowsRecordingIOS: false,
         playsInSilentModeIOS: true,
@@ -364,9 +412,7 @@ export default function ChatScreen() {
       });
       
       await sound.playAsync();
-      console.log('✅ Audio playback started');
       
-      // Clean up sound after playback
       sound.setOnPlaybackStatusUpdate((status) => {
         if (status.isLoaded && status.didJustFinish) {
           sound.unloadAsync();
@@ -393,22 +439,6 @@ export default function ChatScreen() {
     }
   };
 
-  // Clear chat
-  const clearChat = () => {
-    Alert.alert(
-      'Clear Chat',
-      'Are you sure you want to clear all messages?',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        { 
-          text: 'Clear', 
-          style: 'destructive',
-          onPress: () => setMessages([])
-        }
-      ]
-    );
-  };
-
   // Render message
   const renderMessage = ({ item }: { item: Message }) => (
     <View style={[
@@ -418,189 +448,368 @@ export default function ChatScreen() {
       <View style={[
         styles.messageBubble,
         {
-          backgroundColor: item.isUser 
-            ? Colors[colorScheme ?? 'light'].primary 
-            : Colors[colorScheme ?? 'light'].backgroundSecondary || '#1a1a1a',
+          backgroundColor: item.isUser ? '#007AFF' : '#2C2C2E',
         }
       ]}>
         <Text style={[
           styles.messageText,
-          { color: item.isUser ? 'white' : Colors[colorScheme ?? 'light'].text }
+          { color: '#FFFFFF' }
         ]}>
           {item.text}
         </Text>
         
-        {/* Audio replay button for bot messages */}
         {!item.isUser && item.audioData && (
           <TouchableOpacity 
             onPress={() => playAudioResponse(item.audioData!)}
             style={styles.audioButton}
           >
-            <Ionicons name="play" size={16} color={Colors[colorScheme ?? 'light'].primary} />
+            <Ionicons name="play" size={16} color="#007AFF" />
           </TouchableOpacity>
         )}
       </View>
-      <Text style={[styles.timestamp, { color: Colors[colorScheme ?? 'light'].textSecondary || '#666' }]}>
+      <Text style={styles.timestamp}>
         {item.timestamp.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
       </Text>
     </View>
   );
 
+  const getStatusText = () => {
+    if (!isConnected) return 'Connecting...';
+    if (isListening) return 'Listening...';
+    if (isProcessing) return 'Processing...';
+    return 'Tap to speak';
+  };
+
+  const getButtonColor = () => {
+    if (!isConnected) return '#666666';
+    if (isListening) return '#FF3B30';
+    if (isProcessing) return '#FF9500';
+    return '#007AFF';
+  };
+
   return (
-    <SafeAreaView style={[styles.container, { backgroundColor: Colors[colorScheme ?? 'light'].background }]}>
-      {/* Header */}
-      <View style={[styles.header, { borderBottomColor: Colors[colorScheme ?? 'light'].border || '#333' }]}>
-        <Text style={[styles.headerTitle, { color: Colors[colorScheme ?? 'light'].primary }]}>
-          OZZU Voice Chat
-        </Text>
-        <View style={styles.headerButtons}>
-          <TouchableOpacity onPress={clearChat} style={styles.headerButton}>
-            <Ionicons name="trash-outline" size={20} color={Colors[colorScheme ?? 'light'].textSecondary || '#666'} />
-          </TouchableOpacity>
-          <TouchableOpacity onPress={signOut} style={styles.headerButton}>
-            <Ionicons name="log-out-outline" size={20} color={Colors[colorScheme ?? 'light'].textSecondary || '#666'} />
-          </TouchableOpacity>
-        </View>
-      </View>
+    <>
+      <StatusBar barStyle="light-content" backgroundColor="#000000" />
+      <SafeAreaView style={styles.container}>
+        {/* Main Voice Interface */}
+        <View style={styles.mainContainer}>
+          {/* Brand */}
+          <View style={styles.brandContainer}>
+            <Text style={styles.brandText}>OZZU</Text>
+            <Text style={styles.brandSubtext}>AI Voice Assistant</Text>
+          </View>
 
-      {/* Status Bar */}
-      <View style={[styles.statusBar, { backgroundColor: Colors[colorScheme ?? 'light'].backgroundSecondary || '#1a1a1a' }]}>
-        <View style={styles.statusLeft}>
-          <View style={[styles.connectionDot, { backgroundColor: isConnected ? '#4CAF50' : '#F44336' }]} />
-          <Text style={[styles.statusText, { color: Colors[colorScheme ?? 'light'].textSecondary }]}>
-            {connectionStatus}
+          {/* Voice Button with Blue Ring */}
+          <View style={styles.voiceButtonContainer}>
+            {/* Outer Ring Animation */}
+            <Animated.View style={[
+              styles.outerRing,
+              {
+                transform: [{ scale: pulseAnimatedValue }],
+                opacity: ringAnimatedValue.interpolate({
+                  inputRange: [0, 1],
+                  outputRange: [0.3, 0.8]
+                })
+              }
+            ]} />
+            
+            {/* Inner Ring */}
+            <View style={[
+              styles.innerRing,
+              { borderColor: getButtonColor() }
+            ]} />
+            
+            {/* Voice Button */}
+            <TouchableOpacity
+              onPress={handleVoiceButtonPress}
+              disabled={!isConnected || (isProcessing && !isListening)}
+              style={[
+                styles.voiceButton,
+                {
+                  backgroundColor: getButtonColor(),
+                  opacity: (!isConnected || (isProcessing && !isListening)) ? 0.5 : 1,
+                }
+              ]}
+            >
+              {isProcessing && !isListening ? (
+                <ActivityIndicator size="large" color="white" />
+              ) : isListening ? (
+                <Ionicons name="stop" size={32} color="white" />
+              ) : (
+                <Ionicons name="mic" size={32} color="white" />
+              )}
+            </TouchableOpacity>
+          </View>
+
+          {/* Status Text */}
+          <Text style={styles.statusText}>
+            {getStatusText()}
           </Text>
-        </View>
-        
-        {isProcessing && (
-          <View style={styles.statusRight}>
-            <ActivityIndicator size="small" color={Colors[colorScheme ?? 'light'].primary} />
-            <Text style={[styles.statusText, { color: Colors[colorScheme ?? 'light'].textSecondary }]}>
-              {isListening ? 'Listening...' : 'Processing...'}
-            </Text>
-          </View>
-        )}
-      </View>
-      
-      {/* Messages */}
-      <FlatList
-        ref={flatListRef}
-        data={messages}
-        keyExtractor={(item) => item.id}
-        renderItem={renderMessage}
-        style={styles.messagesList}
-        contentContainerStyle={styles.messagesContent}
-        showsVerticalScrollIndicator={false}
-        ListEmptyComponent={() => (
-          <View style={styles.emptyState}>
-            <Ionicons name="mic" size={60} color={Colors[colorScheme ?? 'light'].primary} />
-            <Text style={[styles.emptyTitle, { color: Colors[colorScheme ?? 'light'].text }]}>
-              Voice Chat Ready
-            </Text>
-            <Text style={[styles.emptySubtitle, { color: Colors[colorScheme ?? 'light'].textSecondary }]}>
-              Tap the microphone to start talking with AI
-            </Text>
-          </View>
-        )}
-      />
 
-      {/* Voice Controls */}
-      <View style={[styles.voiceContainer, { borderTopColor: Colors[colorScheme ?? 'light'].border || '#333' }]}>
+          {/* Connection Status */}
+          <View style={styles.connectionContainer}>
+            <View style={[
+              styles.connectionDot, 
+              { backgroundColor: isConnected ? '#34C759' : '#FF3B30' }
+            ]} />
+            <Text style={styles.connectionText}>
+              {connectionStatus}
+            </Text>
+          </View>
+        </View>
+
+        {/* Floating Chat Toggle Button */}
         <TouchableOpacity
-          onPress={handleVoiceButtonPress}
-          disabled={!isConnected || (isProcessing && !isListening)}
-          style={[
-            styles.voiceButton,
-            {
-              backgroundColor: isListening 
-                ? Colors[colorScheme ?? 'light'].danger 
-                : Colors[colorScheme ?? 'light'].primary,
-              opacity: (!isConnected || (isProcessing && !isListening)) ? 0.5 : 1,
-            }
-          ]}
+          onPress={toggleChat}
+          style={styles.chatToggleButton}
         >
-          {isListening ? (
-            <Ionicons name="stop" size={32} color="white" />
-          ) : (
-            <Ionicons name="mic" size={32} color="white" />
+          <Ionicons 
+            name={isChatVisible ? "close" : "chatbubbles"} 
+            size={24} 
+            color="white" 
+          />
+          {messages.length > 0 && !isChatVisible && (
+            <View style={styles.messageBadge}>
+              <Text style={styles.messageBadgeText}>
+                {messages.length > 99 ? '99+' : messages.length}
+              </Text>
+            </View>
           )}
         </TouchableOpacity>
-        
-        <Text style={[styles.voiceInstructions, { color: Colors[colorScheme ?? 'light'].textSecondary }]}>
-          {!isConnected 
-            ? 'Connecting...' 
-            : isListening 
-            ? 'Listening... Tap to stop'
-            : isProcessing
-            ? 'Processing your message...'
-            : 'Tap to speak'
+
+        {/* Collapsible Chat Interface */}
+        <Animated.View style={[
+          styles.chatContainer,
+          {
+            transform: [{
+              translateY: chatAnimatedValue.interpolate({
+                inputRange: [0, 1],
+                outputRange: [height, 0]
+              })
+            }],
+            opacity: chatAnimatedValue
           }
-        </Text>
-      </View>
-    </SafeAreaView>
+        ]}>
+          <View style={styles.chatHeader}>
+            <Text style={styles.chatTitle}>Conversation</Text>
+            <TouchableOpacity onPress={() => setMessages([])}>
+              <Ionicons name="trash-outline" size={20} color="#8E8E93" />
+            </TouchableOpacity>
+          </View>
+          
+          <FlatList
+            ref={flatListRef}
+            data={messages}
+            keyExtractor={(item) => item.id}
+            renderItem={renderMessage}
+            style={styles.messagesList}
+            contentContainerStyle={styles.messagesContent}
+            showsVerticalScrollIndicator={false}
+            ListEmptyComponent={() => (
+              <View style={styles.emptyState}>
+                <Ionicons name="chatbubbles-outline" size={48} color="#48484A" />
+                <Text style={styles.emptyText}>No messages yet</Text>
+                <Text style={styles.emptySubtext}>Start a conversation by speaking</Text>
+              </View>
+            )}
+          />
+        </Animated.View>
+      </SafeAreaView>
+    </>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1 },
-  header: {
+  container: {
+    flex: 1,
+    backgroundColor: '#000000',
+  },
+  mainContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingHorizontal: 40,
+  },
+  brandContainer: {
+    alignItems: 'center',
+    marginBottom: 80,
+  },
+  brandText: {
+    fontSize: 42,
+    fontWeight: '200',
+    letterSpacing: 8,
+    color: '#FFFFFF',
+    marginBottom: 8,
+  },
+  brandSubtext: {
+    fontSize: 16,
+    color: '#8E8E93',
+    letterSpacing: 2,
+  },
+  voiceButtonContainer: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 40,
+  },
+  outerRing: {
+    position: 'absolute',
+    width: 200,
+    height: 200,
+    borderRadius: 100,
+    borderWidth: 2,
+    borderColor: '#007AFF',
+  },
+  innerRing: {
+    position: 'absolute',
+    width: 140,
+    height: 140,
+    borderRadius: 70,
+    borderWidth: 3,
+    borderColor: '#007AFF',
+  },
+  voiceButton: {
+    width: 100,
+    height: 100,
+    borderRadius: 50,
+    justifyContent: 'center',
+    alignItems: 'center',
+    elevation: 8,
+    shadowColor: '#007AFF',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+  },
+  statusText: {
+    fontSize: 18,
+    color: '#FFFFFF',
+    marginBottom: 20,
+    textAlign: 'center',
+  },
+  connectionContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: 20,
+  },
+  connectionDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    marginRight: 8,
+  },
+  connectionText: {
+    fontSize: 14,
+    color: '#8E8E93',
+  },
+  chatToggleButton: {
+    position: 'absolute',
+    top: 60,
+    right: 20,
+    width: 50,
+    height: 50,
+    borderRadius: 25,
+    backgroundColor: '#007AFF',
+    justifyContent: 'center',
+    alignItems: 'center',
+    elevation: 4,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.3,
+    shadowRadius: 4,
+  },
+  messageBadge: {
+    position: 'absolute',
+    top: -5,
+    right: -5,
+    backgroundColor: '#FF3B30',
+    borderRadius: 10,
+    minWidth: 20,
+    height: 20,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  messageBadgeText: {
+    color: 'white',
+    fontSize: 12,
+    fontWeight: 'bold',
+  },
+  chatContainer: {
+    position: 'absolute',
+    top: 120,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundColor: '#1C1C1E',
+    borderTopLeftRadius: 20,
+    borderTopRightRadius: 20,
+  },
+  chatHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
     paddingHorizontal: 20,
     paddingVertical: 15,
     borderBottomWidth: 1,
+    borderBottomColor: '#2C2C2E',
   },
-  headerTitle: { fontSize: 20, fontWeight: 'bold' },
-  headerButtons: { flexDirection: 'row', gap: 10 },
-  headerButton: { padding: 8 },
-  statusBar: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingHorizontal: 20,
-    paddingVertical: 8,
+  chatTitle: {
+    fontSize: 18,
+    fontWeight: '600',
+    color: '#FFFFFF',
   },
-  statusLeft: { flexDirection: 'row', alignItems: 'center' },
-  statusRight: { flexDirection: 'row', alignItems: 'center', gap: 8 },
-  connectionDot: { width: 8, height: 8, borderRadius: 4, marginRight: 8 },
-  statusText: { fontSize: 12 },
-  messagesList: { flex: 1 },
-  messagesContent: { padding: 16, flexGrow: 1 },
-  messageContainer: { marginBottom: 16, maxWidth: '85%' },
-  userMessage: { alignSelf: 'flex-end' },
-  botMessage: { alignSelf: 'flex-start' },
+  messagesList: {
+    flex: 1,
+  },
+  messagesContent: {
+    padding: 16,
+    flexGrow: 1,
+  },
+  messageContainer: {
+    marginBottom: 16,
+    maxWidth: '85%',
+  },
+  userMessage: {
+    alignSelf: 'flex-end',
+  },
+  botMessage: {
+    alignSelf: 'flex-start',
+  },
   messageBubble: {
     paddingHorizontal: 16,
     paddingVertical: 12,
-    borderRadius: 20,
+    borderRadius: 18,
     marginBottom: 4,
     position: 'relative',
   },
-  messageText: { fontSize: 16, lineHeight: 20 },
-  audioButton: { position: 'absolute', bottom: 4, right: 8, padding: 4 },
-  timestamp: { fontSize: 11, textAlign: 'center' },
-  emptyState: { flex: 1, justifyContent: 'center', alignItems: 'center' },
-  emptyTitle: { fontSize: 24, fontWeight: 'bold', marginTop: 20, marginBottom: 8 },
-  emptySubtitle: { fontSize: 16, textAlign: 'center', paddingHorizontal: 40 },
-  voiceContainer: {
-    alignItems: 'center',
-    paddingVertical: 30,
-    paddingHorizontal: 20,
-    borderTopWidth: 1,
+  messageText: {
+    fontSize: 16,
+    lineHeight: 20,
   },
-  voiceButton: {
-    width: 80,
-    height: 80,
-    borderRadius: 40,
+  audioButton: {
+    position: 'absolute',
+    bottom: 4,
+    right: 8,
+    padding: 4,
+  },
+  timestamp: {
+    fontSize: 11,
+    color: '#8E8E93',
+    textAlign: 'center',
+  },
+  emptyState: {
+    flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    marginBottom: 16,
-    elevation: 4,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.2,
-    shadowRadius: 4,
+    paddingVertical: 60,
   },
-  voiceInstructions: { fontSize: 16, textAlign: 'center' },
+  emptyText: {
+    fontSize: 18,
+    color: '#FFFFFF',
+    marginTop: 16,
+    marginBottom: 8,
+  },
+  emptySubtext: {
+    fontSize: 14,
+    color: '#8E8E93',
+    textAlign: 'center',
+  },
 });

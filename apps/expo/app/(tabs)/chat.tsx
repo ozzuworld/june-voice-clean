@@ -1,195 +1,233 @@
-import React, { useState, useRef, useEffect } from 'react';
+// app/(tabs)/chat.tsx - Enhanced Ring Design with Real-time Audio Streaming
+import React, { useState, useRef, useEffect, useCallback } from 'react';
 import {
   View,
   Text,
   TouchableOpacity,
+  FlatList,
+  SafeAreaView,
   StyleSheet,
-  Animated,
-  Alert,
   ActivityIndicator,
+  Alert,
+  Animated,
+  Dimensions,
+  StatusBar,
 } from 'react-native';
-import { Audio } from 'expo-av';
-import * as AuthSession from 'expo-auth-session';
-import * as WebBrowser from 'expo-web-browser';
-import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Ionicons } from '@expo/vector-icons';
-import ChatModal from '../../components/ChatModal';
-import MenuModal from '../../components/MenuModal';
+import { Audio } from 'expo-av';
+import { useAuth } from '@/hooks/useAuth';
+import { useWebSocketChat } from '@/hooks/useWebSocketChat';
 
-WebBrowser.maybeCompleteAuthSession();
+const { width, height } = Dimensions.get('window');
 
 interface Message {
   id: string;
   text: string;
   isUser: boolean;
   timestamp: Date;
+  status?: 'sending' | 'sent' | 'error';
+  audioData?: string;
+  isVoice?: boolean;
 }
 
 export default function ChatScreen() {
-  // Connection states
-  const [isConnected, setIsConnected] = useState(false);
-  const [isAuthenticated, setIsAuthenticated] = useState(false);
-  const [webSocket, setWebSocket] = useState<WebSocket | null>(null);
+  const { user, signOut, accessToken, isAuthenticated, signIn, isLoading, error, clearError } = useAuth();
+  const { 
+    isConnected, 
+    messages, 
+    isProcessing, 
+    audioStreamState,
+    sessionId,
+    connect,
+    sendTextMessage,
+    sendVoiceMessage 
+  } = useWebSocketChat();
   
-  // Audio states
   const [isListening, setIsListening] = useState(false);
-  const [isProcessing, setIsProcessing] = useState(false);
-  const [currentRecording, setCurrentRecording] = useState<Audio.Recording | null>(null);
-  const [isAudioStreaming, setIsAudioStreaming] = useState(false);
-  const [streamingInterval, setStreamingInterval] = useState<NodeJS.Timeout | null>(null);
-  
-  // Conversation states
-  const [isConversationMode, setIsConversationMode] = useState(false);
-  const [messages, setMessages] = useState<Message[]>([]);
-  
-  // UI states
   const [isChatVisible, setIsChatVisible] = useState(false);
   const [isMenuVisible, setIsMenuVisible] = useState(false);
+  const [isConversationMode, setIsConversationMode] = useState(false);
+  const [isStreaming, setIsStreaming] = useState(false);
   
-  // Animation values
+  const flatListRef = useRef<FlatList>(null);
+  const recordingRef = useRef<Audio.Recording | null>(null);
+  const streamingIntervalRef = useRef<NodeJS.Timeout | null>(null);
+  const chatAnimatedValue = useRef(new Animated.Value(0)).current;
+  const menuAnimatedValue = useRef(new Animated.Value(0)).current;
+  
+  // Enhanced ring animations
+  const mainRingScale = useRef(new Animated.Value(1)).current;
+  const mainRingOpacity = useRef(new Animated.Value(0.8)).current;
   const glowRingScale = useRef(new Animated.Value(1)).current;
   const glowRingOpacity = useRef(new Animated.Value(0.3)).current;
   const pulseRingScale = useRef(new Animated.Value(1)).current;
   const pulseRingOpacity = useRef(new Animated.Value(0)).current;
-  const mainRingScale = useRef(new Animated.Value(1)).current;
-  const mainRingOpacity = useRef(new Animated.Value(0.8)).current;
-  const spinValue = useRef(new Animated.Value(0)).current;
+  const rotationValue = useRef(new Animated.Value(0)).current;
 
-  // Auth configuration
-  const discovery = AuthSession.useAutoDiscovery('https://idp.ozzu.world/realms/allsafe');
-  const clientId = 'june-mobile-app';
-  const redirectUri = AuthSession.makeRedirectUri({
-    scheme: 'exp',
-    path: '/auth/callback',
-  });
-
-  const [request, response, promptAsync] = AuthSession.useAuthRequest(
-    {
-      clientId,
-      scopes: ['openid', 'profile', 'email', 'orchestrator-aud'],
-      redirectUri,
-      responseType: AuthSession.ResponseType.Code,
-      codeChallenge: AuthSession.useAuthRequest.createChallengeAsync().code_challenge,
-      codeChallengeMethod: AuthSession.CodeChallengeMethod.S256,
-    },
-    discovery
-  );
-
-  // Debug auth request
+  // Auto-scroll to bottom
   useEffect(() => {
-    if (request && discovery) {
-      console.log('🔍 [AUTH REQUEST DEBUG] ==================');
-      console.log('🔍 Client ID:', request.clientId);
-      console.log('🔍 Redirect URI:', request.redirectUri);
-      console.log('🔍 Discovery URL:', discovery.discoveryDocument?.issuer);
-      console.log('🔍 Auth Endpoint:', discovery.discoveryDocument?.authorizationEndpoint);
-      console.log('🔍 Token Endpoint:', discovery.discoveryDocument?.tokenEndpoint);
-      console.log('🔍 Request URL that will be opened:', request.url);
-      console.log('🔍 ========================================');
+    if (messages.length > 0) {
+      setTimeout(() => flatListRef.current?.scrollToEnd({ animated: true }), 100);
     }
-  }, [request, discovery]);
+  }, [messages.length]);
 
-  // Handle auth response
+  // Connect WebSocket when authenticated
   useEffect(() => {
-    if (response?.type === 'success') {
-      const { code } = response.params;
-      exchangeCodeForToken(code);
+    if (isAuthenticated && accessToken) {
+      console.log('🔌 [CHAT] Connecting WebSocket...'); 
+      connect();
     }
-  }, [response]);
+  }, [isAuthenticated, accessToken, connect]);
 
-  const exchangeCodeForToken = async (code: string) => {
-    try {
-      if (!discovery?.discoveryDocument?.tokenEndpoint) {
-        throw new Error('Token endpoint not found');
-      }
+  // Enhanced ring animations based on state
+  useEffect(() => {
+    // Stop all animations first
+    mainRingScale.stopAnimation();
+    glowRingScale.stopAnimation();
+    pulseRingScale.stopAnimation();
+    rotationValue.stopAnimation();
 
-      const tokenResult = await AuthSession.exchangeCodeAsync(
-        {
-          clientId,
-          code,
-          redirectUri,
-          extraParams: {},
-        },
-        discovery
-      );
-
-      if (tokenResult.accessToken) {
-        await AsyncStorage.setItem('access_token', tokenResult.accessToken);
-        setIsAuthenticated(true);
-        connectWebSocket(tokenResult.accessToken);
-      }
-    } catch (error) {
-      console.error('Token exchange error:', error);
-      Alert.alert('Authentication Error', 'Failed to complete authentication');
-    }
-  };
-
-  const connectWebSocket = (token: string) => {
-    console.log('🔌 Connecting WebSocket...');
-    
-    const ws = new WebSocket('wss://api.ozzu.world/ws/', [], {
-      headers: {
-        Authorization: `Bearer ${token}`,
-      },
-    });
-
-    ws.onopen = () => {
-      console.log('✅ WebSocket connected');
-    };
-
-    ws.onmessage = (event) => {
-      console.log('📨 [WEBSOCKET DEBUG] Raw message received:', event.data);
+    if (!isConnected) {
+      // Disconnected state - subtle pulse
+      Animated.loop(
+        Animated.sequence([
+          Animated.timing(mainRingOpacity, {
+            toValue: 0.3,
+            duration: 1500,
+            useNativeDriver: true,
+          }),
+          Animated.timing(mainRingOpacity, {
+            toValue: 0.6,
+            duration: 1500,
+            useNativeDriver: true,
+          }),
+        ])
+      ).start();
+    } else if (isListening || isStreaming) {
+      // Listening/Streaming state - active glow + rotation
+      Animated.parallel([
+        Animated.loop(
+          Animated.timing(rotationValue, {
+            toValue: 1,
+            duration: 2000, // Faster rotation for streaming
+            useNativeDriver: true,
+          })
+        ),
+        Animated.loop(
+          Animated.sequence([
+            Animated.timing(glowRingScale, {
+              toValue: 1.15,
+              duration: 800,
+              useNativeDriver: true,
+            }),
+            Animated.timing(glowRingScale, {
+              toValue: 1,
+              duration: 800,
+              useNativeDriver: true,
+            }),
+          ])
+        ),
+        Animated.loop(
+          Animated.sequence([
+            Animated.timing(pulseRingScale, {
+              toValue: 1.4,
+              duration: 600,
+              useNativeDriver: true,
+            }),
+            Animated.timing(pulseRingScale, {
+              toValue: 1,
+              duration: 600,
+              useNativeDriver: true,
+            }),
+          ])
+        ),
+      ]).start();
       
-      try {
-        const message = JSON.parse(event.data);
-        console.log('📨 [WEBSOCKET DEBUG] Parsed message:', message);
-        
-        if (message.type === 'connected') {
-          console.log('✅ [WEBSOCKET DEBUG] Connection confirmed with features:', message.features);
-          console.log('✅ WebSocket session established');
-          setIsConnected(true);
-        }
-        
-        if (message.type === 'audio_response' && message.audio_url) {
-          handleAudioResponse(message.audio_url, message.text || '');
-        }
-        
-        if (message.type === 'text_response') {
-          addMessage(message.text, false);
-        }
-        
-        if (message.type === 'error') {
-          console.error('❌ WebSocket error:', message.message);
-          Alert.alert('Error', message.message);
-        }
-        
-      } catch (error) {
-        console.error('❌ [WEBSOCKET DEBUG] Error parsing message:', error);
-      }
-    };
+      mainRingOpacity.setValue(1);
+      pulseRingOpacity.setValue(0.5);
+      glowRingOpacity.setValue(0.7);
+    } else if (isProcessing) {
+      // Processing state - steady glow + slow rotation
+      Animated.parallel([
+        Animated.loop(
+          Animated.timing(rotationValue, {
+            toValue: 1,
+            duration: 4000,
+            useNativeDriver: true,
+          })
+        ),
+        Animated.timing(mainRingScale, {
+          toValue: 1.05,
+          duration: 300,
+          useNativeDriver: true,
+        }),
+      ]).start();
+      
+      mainRingOpacity.setValue(0.9);
+      glowRingOpacity.setValue(0.5);
+    } else if (isConversationMode) {
+      // Conversation mode - gentle breathing effect
+      Animated.loop(
+        Animated.sequence([
+          Animated.timing(mainRingScale, {
+            toValue: 1.02,
+            duration: 2000,
+            useNativeDriver: true,
+          }),
+          Animated.timing(mainRingScale, {
+            toValue: 1,
+            duration: 2000,
+            useNativeDriver: true,
+          }),
+        ])
+      ).start();
+      
+      mainRingOpacity.setValue(0.9);
+      glowRingOpacity.setValue(0.4);
+    } else {
+      // Connected idle state - soft glow
+      mainRingScale.setValue(1);
+      mainRingOpacity.setValue(0.8);
+      glowRingOpacity.setValue(0.3);
+      pulseRingOpacity.setValue(0);
+    }
+  }, [isConnected, isListening, isProcessing, isConversationMode, isStreaming]);
 
-    ws.onclose = (event) => {
-      console.log('🔌 [WEBSOCKET DEBUG] Connection closed with code:', event.code, 'reason:', event.reason);
-      setIsConnected(false);
-      setIsListening(false);
-      setIsProcessing(false);
-      setIsAudioStreaming(false);
-    };
-
-    ws.onerror = (error) => {
-      console.error('❌ [WEBSOCKET DEBUG] WebSocket error:', error);
-    };
-
-    setWebSocket(ws);
+  // Toggle chat visibility
+  const toggleChat = () => {
+    const toValue = isChatVisible ? 0 : 1;
+    setIsChatVisible(!isChatVisible);
+    
+    Animated.spring(chatAnimatedValue, {
+      toValue,
+      useNativeDriver: true,
+      tension: 100,
+      friction: 8,
+    }).start();
   };
 
+  // Toggle menu visibility
+  const toggleMenu = () => {
+    const toValue = isMenuVisible ? 0 : 1;
+    setIsMenuVisible(!isMenuVisible);
+    
+    Animated.spring(menuAnimatedValue, {
+      toValue,
+      useNativeDriver: true,
+      tension: 100,
+      friction: 8,
+    }).start();
+  };
+
+  // Real-time Audio Streaming Functions
   const startAudioStreaming = async () => {
     try {
       console.log('🎤 [AUDIO DEBUG] Starting audio streaming...');
       
       // Check WebSocket connection first
-      if (!webSocket || webSocket.readyState !== WebSocket.OPEN) {
+      if (!isConnected) {
         console.error('❌ [AUDIO DEBUG] WebSocket not connected');
+        Alert.alert('Not Connected', 'Please wait for connection to establish');
         return;
       }
 
@@ -214,43 +252,24 @@ export default function ChatScreen() {
 
       console.log('✅ [AUDIO DEBUG] Audio mode configured');
 
-      // Send audio_start message with detailed logging
-      const audioStartMessage = {
-        type: 'audio_start',
-        sample_rate: 16000,
-        channels: 1,
-        format: 'wav',
-        timestamp: new Date().toISOString()
-      };
-
-      console.log('📨 [AUDIO DEBUG] Sending audio_start message:', audioStartMessage);
-      
-      webSocket.send(JSON.stringify(audioStartMessage));
-      
-      console.log('✅ [AUDIO DEBUG] Audio start message sent successfully');
-
-      // Set streaming state
-      setIsAudioStreaming(true);
-      setIsListening(true);
-      console.log('✅ [AUDIO DEBUG] Audio streaming state set to true');
-
-      // Start the recording
+      // Start the recording with streaming-optimized settings
       console.log('🎤 [AUDIO DEBUG] Starting actual audio recording...');
       
       const recordingOptions = {
         android: {
           extension: '.wav',
-          outputFormat: Audio.RECORDING_OPTION_ANDROID_OUTPUT_FORMAT_DEFAULT,
-          audioEncoder: Audio.RECORDING_OPTION_ANDROID_AUDIO_ENCODER_DEFAULT,
-          sampleRate: 16000,
-          numberOfChannels: 1,
+          outputFormat: Audio.RECORDING_OPTION_ANDROID_OUTPUT_FORMAT_PCM_16BIT,
+          audioEncoder: Audio.RECORDING_OPTION_ANDROID_AUDIO_ENCODER_PCM_16BIT,
+          sampleRate: 16000, // Optimized for speech recognition
+          numberOfChannels: 1, // Mono for better performance
           bitRate: 128000,
         },
         ios: {
           extension: '.wav',
+          outputFormat: Audio.RECORDING_OPTION_IOS_OUTPUT_FORMAT_LINEARPCM,
           audioQuality: Audio.RECORDING_OPTION_IOS_AUDIO_QUALITY_HIGH,
-          sampleRate: 16000,
-          numberOfChannels: 1,
+          sampleRate: 16000, // Optimized for speech recognition
+          numberOfChannels: 1, // Mono for better performance
           bitRate: 128000,
           linearPCMBitDepth: 16,
           linearPCMIsBigEndian: false,
@@ -259,40 +278,39 @@ export default function ChatScreen() {
       };
 
       const { recording } = await Audio.Recording.createAsync(recordingOptions);
-      setCurrentRecording(recording);
-      
+      recordingRef.current = recording;
+      setIsListening(true);
+      setIsStreaming(true);
+
       console.log('✅ [AUDIO DEBUG] Audio recording started successfully');
       console.log('🎤 Started real-time audio streaming');
 
-      // Start streaming interval (but don't send chunks yet - just keep alive)
-      const interval = setInterval(() => {
-        if (webSocket && webSocket.readyState === WebSocket.OPEN) {
-          console.log('🔄 [AUDIO DEBUG] Streaming interval - connection alive');
-          // For now, just log - we'll implement actual chunk sending later
-        } else {
-          console.error('❌ [AUDIO DEBUG] WebSocket connection lost during streaming');
-          clearInterval(interval);
-        }
-      }, 1000); // Check every 1 second instead of sending chunks
-
-      setStreamingInterval(interval);
+      // For now, just simulate streaming without sending chunks
+      // This will help us debug the WebSocket connection first
+      startStreamingMonitor();
 
     } catch (error) {
       console.error('❌ [AUDIO DEBUG] Error starting audio streaming:', error);
-      
-      // Clean up on error
-      setIsAudioStreaming(false);
+      Alert.alert('Streaming Error', 'Failed to start voice streaming');
+      setIsStreaming(false);
       setIsListening(false);
-      
-      if (currentRecording) {
-        try {
-          await currentRecording.stopAndUnloadAsync();
-          setCurrentRecording(null);
-        } catch (cleanupError) {
-          console.error('❌ [AUDIO DEBUG] Error cleaning up recording:', cleanupError);
-        }
-      }
     }
+  };
+
+  const startStreamingMonitor = () => {
+    if (streamingIntervalRef.current) {
+      clearInterval(streamingIntervalRef.current);
+    }
+
+    // Monitor connection every 1 second during streaming
+    streamingIntervalRef.current = setInterval(() => {
+      if (!isConnected) {
+        console.error('❌ [AUDIO DEBUG] WebSocket connection lost during streaming');
+        stopAudioStreaming();
+        return;
+      }
+      console.log('🔄 [AUDIO DEBUG] Streaming monitor - connection alive');
+    }, 1000);
   };
 
   const stopAudioStreaming = async () => {
@@ -300,32 +318,27 @@ export default function ChatScreen() {
       console.log('🛑 [AUDIO DEBUG] Stopping audio streaming...');
 
       // Clear streaming interval
-      if (streamingInterval) {
-        clearInterval(streamingInterval);
-        setStreamingInterval(null);
+      if (streamingIntervalRef.current) {
+        clearInterval(streamingIntervalRef.current);
+        streamingIntervalRef.current = null;
       }
 
-      // Stop recording
-      if (currentRecording) {
-        console.log('🛑 [AUDIO DEBUG] Stopping recording...');
-        await currentRecording.stopAndUnloadAsync();
-        setCurrentRecording(null);
-      }
-
-      // Send audio_end message
-      if (webSocket && webSocket.readyState === WebSocket.OPEN) {
-        const audioEndMessage = {
-          type: 'audio_end',
-          timestamp: new Date().toISOString()
-        };
-        
-        console.log('📨 [AUDIO DEBUG] Sending audio_end message:', audioEndMessage);
-        webSocket.send(JSON.stringify(audioEndMessage));
-      }
-
-      setIsAudioStreaming(false);
       setIsListening(false);
-      setIsProcessing(true);
+      setIsStreaming(false);
+      
+      // Stop and process recording
+      if (recordingRef.current) {
+        console.log('🛑 [AUDIO DEBUG] Stopping recording...');
+        await recordingRef.current.stopAndUnloadAsync();
+        const uri = recordingRef.current.getURI();
+        recordingRef.current = null;
+
+        if (uri) {
+          console.log('🎤 [AUDIO DEBUG] Processing recorded audio:', uri);
+          await sendVoiceMessage(uri);
+        }
+      }
+
       console.log('✅ [AUDIO DEBUG] Audio streaming stopped successfully');
       console.log('🛾 Stopped audio streaming');
 
@@ -334,270 +347,368 @@ export default function ChatScreen() {
     }
   };
 
+  // Handle main ring tap - Now uses real-time streaming
   const handleMainRingPress = async () => {
-    if (!isConnected) return;
+    if (!isConnected) {
+      Alert.alert('Not Connected', 'Please wait for connection to establish');
+      return;
+    }
 
-    if (isAudioStreaming) {
-      await stopAudioStreaming();
+    if (isConversationMode || isStreaming) {
+      // Stop conversation mode and streaming
+      setIsConversationMode(false);
+      if (isStreaming) {
+        await stopAudioStreaming();
+      }
     } else {
+      // Start conversation mode with real-time streaming
+      setIsConversationMode(true);
       await startAudioStreaming();
     }
   };
 
-  const handleAudioResponse = async (audioUrl: string, text: string) => {
-    try {
-      setIsProcessing(false);
-      
-      if (text) {
-        addMessage(text, false);
-      }
-
-      const { sound } = await Audio.Sound.createAsync(
-        { uri: audioUrl },
-        { shouldPlay: true }
-      );
-
-      sound.setOnPlaybackStatusUpdate((status) => {
-        if (status.isLoaded && status.didJustFinish) {
-          if (isConversationMode) {
-            setTimeout(() => startAudioStreaming(), 1000);
-          }
+  // Render message
+  const renderMessage = ({ item }: { item: Message }) => (
+    <View style={[
+      styles.messageContainer,
+      item.isUser ? styles.userMessage : styles.botMessage
+    ]}>
+      <View style={[
+        styles.messageBubble,
+        {
+          backgroundColor: item.isUser ? '#007AFF' : '#2C2C2E',
         }
-      });
-    } catch (error) {
-      console.error('Audio playback error:', error);
-      setIsProcessing(false);
-    }
-  };
-
-  const addMessage = (text: string, isUser: boolean) => {
-    const newMessage: Message = {
-      id: Date.now().toString(),
-      text,
-      isUser,
-      timestamp: new Date(),
-    };
-    setMessages(prev => [...prev, newMessage]);
-  };
-
-  // Animation effects
-  useEffect(() => {
-    if (isListening) {
-      // Listening animations
-      Animated.loop(
-        Animated.sequence([
-          Animated.timing(pulseRingScale, {
-            toValue: 1.1,
-            duration: 1000,
-            useNativeDriver: true,
-          }),
-          Animated.timing(pulseRingScale, {
-            toValue: 1,
-            duration: 1000,
-            useNativeDriver: true,
-          }),
-        ])
-      ).start();
-
-      Animated.timing(pulseRingOpacity, {
-        toValue: 0.6,
-        duration: 300,
-        useNativeDriver: true,
-      }).start();
-
-      // Rotation for streaming
-      Animated.loop(
-        Animated.timing(spinValue, {
-          toValue: 1,
-          duration: isAudioStreaming ? 2000 : 3000, // Faster rotation during streaming
-          useNativeDriver: true,
-        })
-      ).start();
-    } else {
-      Animated.timing(pulseRingOpacity, {
-        toValue: 0,
-        duration: 300,
-        useNativeDriver: true,
-      }).start();
-    }
-
-    if (isProcessing) {
-      // Processing rotation
-      Animated.loop(
-        Animated.timing(spinValue, {
-          toValue: 1,
-          duration: 2000,
-          useNativeDriver: true,
-        })
-      ).start();
-    }
-
-    if (isConversationMode && !isListening && !isProcessing) {
-      // Breathing effect for conversation mode
-      Animated.loop(
-        Animated.sequence([
-          Animated.timing(mainRingScale, {
-            toValue: 1.02,
-            duration: 2000,
-            useNativeDriver: true,
-          }),
-          Animated.timing(mainRingScale, {
-            toValue: 1,
-            duration: 2000,
-            useNativeDriver: true,
-          }),
-        ])
-      ).start();
-    }
-  }, [isListening, isProcessing, isConversationMode, isAudioStreaming]);
-
-  const spin = spinValue.interpolate({
-    inputRange: [0, 1],
-    outputRange: ['0deg', '360deg'],
-  });
+      ]}>
+        <Text style={[
+          styles.messageText,
+          { color: '#FFFFFF' }
+        ]}>
+          {item.text}
+        </Text>
+        
+        {item.isVoice && (
+          <View style={styles.voiceIndicator}>
+            <Ionicons name="mic" size={12} color="rgba(255,255,255,0.6)" />
+          </View>
+        )}
+      </View>
+      <Text style={styles.timestamp}>
+        {item.timestamp.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+      </Text>
+    </View>
+  );
 
   const getRingColor = () => {
-    if (!isConnected) return '#666';
-    if (isListening) return '#FF4444';
-    if (isProcessing) return '#FF8800';
-    if (isConversationMode) return '#00AA00';
-    return '#4A9EFF';
+    if (!isConnected) return '#666666';
+    if (isListening || isStreaming) return '#FF3B30';
+    if (isProcessing) return '#FF9500';
+    if (isConversationMode) return '#34C759';
+    return '#007AFF';
   };
 
-  const authenticate = () => {
-    promptAsync();
-  };
+  const spin = rotationValue.interpolate({
+    inputRange: [0, 1],
+    outputRange: ['0deg', '360deg']
+  });
 
+  // Show authentication screen if not authenticated
   if (!isAuthenticated) {
     return (
-      <View style={styles.container}>
+      <SafeAreaView style={styles.container}>
         <View style={styles.authContainer}>
-          <Text style={styles.authTitle}>June Voice Assistant</Text>
-          <Text style={styles.authSubtitle}>Please authenticate to continue</Text>
-          <TouchableOpacity style={styles.authButton} onPress={authenticate}>
-            <Text style={styles.authButtonText}>Sign In with Keycloak</Text>
-          </TouchableOpacity>
+          <View style={styles.authContent}>
+            <Text style={styles.authTitle}>June Voice Assistant</Text>
+            <Text style={styles.authSubtitle}>Please authenticate to continue</Text>
+            
+            {error && (
+              <View style={styles.errorContainer}>
+                <Text style={styles.errorText}>{error}</Text>
+                <TouchableOpacity onPress={clearError} style={styles.errorDismiss}>
+                  <Ionicons name="close" size={16} color="#FF3B30" />
+                </TouchableOpacity>
+              </View>
+            )}
+            
+            <TouchableOpacity 
+              style={[styles.authButton, isLoading && styles.authButtonDisabled]} 
+              onPress={signIn}
+              disabled={isLoading}
+            >
+              {isLoading ? (
+                <ActivityIndicator color="#fff" />
+              ) : (
+                <Text style={styles.authButtonText}>Sign In with Keycloak</Text>
+              )}
+            </TouchableOpacity>
+            
+            <Text style={styles.authFooter}>Secure authentication via Keycloak</Text>
+          </View>
         </View>
-      </View>
+      </SafeAreaView>
     );
   }
 
   return (
-    <View style={styles.container}>
-      {/* Menu Button */}
-      <TouchableOpacity
-        style={styles.menuButton}
-        onPress={() => setIsMenuVisible(true)}
-      >
-        <Ionicons name="menu" size={24} color="#fff" />
-      </TouchableOpacity>
-
-      {/* Clean Main Interface - Enhanced Ring Design */}
-      <View style={styles.mainContainer}>
-        {/* Enhanced Multi-Layer Ring System */}
-        <TouchableOpacity
-          onPress={handleMainRingPress}
-          disabled={!isConnected}
-          style={styles.ringContainer}
-          activeOpacity={0.8}
-        >
-          {/* Outer Glow Ring */}
-          <Animated.View style={[
-            styles.outerGlowRing,
-            {
-              transform: [{ scale: glowRingScale }],
-              opacity: glowRingOpacity,
-              borderColor: getRingColor(),
-              shadowColor: getRingColor(),
-            }
-          ]} />
-          
-          {/* Pulse Ring (only during listening) */}
-          <Animated.View style={[
-            styles.pulseRing,
-            {
-              transform: [{ scale: pulseRingScale }],
-              opacity: pulseRingOpacity,
-              borderColor: getRingColor(),
-            }
-          ]} />
-          
-          {/* Main Ring with Rotation */}
-          <Animated.View style={[
-            styles.mainRing,
-            {
-              transform: [
-                { scale: mainRingScale },
-                { rotate: spin }
-              ],
-              opacity: mainRingOpacity,
-              borderColor: getRingColor(),
-              shadowColor: getRingColor(),
-            }
-          ]}>
-            {/* Inner Ring Content */}
-            <View style={[
-              styles.innerRingContent,
+    <>
+      <StatusBar barStyle="light-content" backgroundColor="#000000" />
+      <SafeAreaView style={styles.container}>
+        {/* COMPLETELY CLEAN MAIN INTERFACE - JUST THE RING */}
+        <View style={styles.mainContainer}>
+          {/* Enhanced Multi-Layer Ring System - THE ONLY INTERFACE ELEMENT */}
+          <TouchableOpacity
+            onPress={handleMainRingPress}
+            disabled={!isConnected}
+            style={styles.ringContainer}
+            activeOpacity={0.8}
+          >
+            {/* Outer Glow Ring */}
+            <Animated.View style={[
+              styles.outerGlowRing,
               {
-                backgroundColor: getRingColor() + '10',
+                transform: [{ scale: glowRingScale }],
+                opacity: glowRingOpacity,
+                borderColor: getRingColor(),
+                shadowColor: getRingColor(),
+              }
+            ]} />
+            
+            {/* Pulse Ring (only during listening/streaming) */}
+            <Animated.View style={[
+              styles.pulseRing,
+              {
+                transform: [{ scale: pulseRingScale }],
+                opacity: pulseRingOpacity,
+                borderColor: getRingColor(),
+              }
+            ]} />
+            
+            {/* Main Ring with Rotation */}
+            <Animated.View style={[
+              styles.mainRing,
+              {
+                transform: [
+                  { scale: mainRingScale },
+                  { rotate: spin }
+                ],
+                opacity: mainRingOpacity,
+                borderColor: getRingColor(),
+                shadowColor: getRingColor(),
               }
             ]}>
-              {isProcessing && (
-                <ActivityIndicator size="large" color={getRingColor()} />
-              )}
-              {isListening && (
-                <View style={styles.listeningIndicator}>
-                  <Animated.View style={[styles.waveBar, { backgroundColor: getRingColor() }]} />
-                  <Animated.View style={[styles.waveBar, { backgroundColor: getRingColor() }]} />
-                  <Animated.View style={[styles.waveBar, { backgroundColor: getRingColor() }]} />
-                  <Animated.View style={[styles.waveBar, { backgroundColor: getRingColor() }]} />
-                  {isAudioStreaming && (
-                    <Animated.View style={[styles.streamingBar, { backgroundColor: getRingColor() }]} />
-                  )}
-                </View>
-              )}
-              {isConversationMode && !isListening && !isProcessing && (
-                <View style={styles.conversationIndicator}>
-                  <View style={[styles.conversationDot, { backgroundColor: getRingColor() }]} />
-                  <View style={[styles.conversationDot, { backgroundColor: getRingColor() }]} />
-                  <View style={[styles.conversationDot, { backgroundColor: getRingColor() }]} />
-                </View>
-              )}
-            </View>
-          </Animated.View>
+              {/* Inner Ring Content */}
+              <View style={[
+                styles.innerRingContent,
+                {
+                  backgroundColor: getRingColor() + '10',
+                }
+              ]}>
+                {isProcessing && (
+                  <ActivityIndicator size="large" color={getRingColor()} />
+                )}
+                {(isListening || isStreaming) && (
+                  <View style={styles.listeningIndicator}>
+                    <Animated.View style={[styles.waveBar, { backgroundColor: getRingColor() }]} />
+                    <Animated.View style={[styles.waveBar, { backgroundColor: getRingColor() }]} />
+                    <Animated.View style={[styles.waveBar, { backgroundColor: getRingColor() }]} />
+                    <Animated.View style={[styles.waveBar, { backgroundColor: getRingColor() }]} />
+                    {isStreaming && (
+                      <Animated.View style={[styles.streamingIndicator, { backgroundColor: getRingColor() }]} />
+                    )}
+                  </View>
+                )}
+                {isConversationMode && !isListening && !isProcessing && !isStreaming && (
+                  <View style={styles.conversationIndicator}>
+                    <View style={[styles.conversationDot, { backgroundColor: getRingColor() }]} />
+                    <View style={[styles.conversationDot, { backgroundColor: getRingColor() }]} />
+                    <View style={[styles.conversationDot, { backgroundColor: getRingColor() }]} />
+                  </View>
+                )}
+              </View>
+            </Animated.View>
+          </TouchableOpacity>
+        </View>
+
+        {/* Floating Menu Button (Left Side) */}
+        <TouchableOpacity
+          onPress={toggleMenu}
+          style={styles.menuToggleButton}
+        >
+          <Ionicons 
+            name={isMenuVisible ? "close" : "menu"} 
+            size={24} 
+            color="white" 
+          />
         </TouchableOpacity>
 
-        {/* NO STATUS TEXT - COMPLETELY CLEAN! */}
-      </View>
+        {/* Left Side Floating Menu */}
+        <Animated.View style={[
+          styles.floatingMenu,
+          {
+            transform: [{
+              translateX: menuAnimatedValue.interpolate({
+                inputRange: [0, 1],
+                outputRange: [-200, 0]
+              })
+            }],
+            opacity: menuAnimatedValue
+          }
+        ]}>
+          <TouchableOpacity
+            onPress={() => {
+              toggleChat();
+              toggleMenu();
+            }}
+            style={styles.menuItem}
+          >
+            <Ionicons name="chatbubbles" size={20} color="white" />
+            <Text style={styles.menuItemText}>Chat</Text>
+            {messages.length > 0 && (
+              <View style={styles.menuBadge}>
+                <Text style={styles.menuBadgeText}>
+                  {messages.length > 99 ? '99+' : messages.length}
+                </Text>
+              </View>
+            )}
+          </TouchableOpacity>
+          
+          {/* Connection Status in Menu */}
+          <View style={styles.menuItem}>
+            <View style={[
+              styles.connectionDot, 
+              { backgroundColor: isConnected ? '#34C759' : '#FF3B30' }
+            ]} />
+            <Text style={styles.menuItemText}>
+              {isConnected ? 'Connected' : 'Disconnected'}
+            </Text>
+          </View>
 
-      {/* Modals */}
-      <ChatModal
-        visible={isChatVisible}
-        onClose={() => setIsChatVisible(false)}
-        messages={messages}
-      />
+          {/* Session ID */}
+          {sessionId && (
+            <View style={styles.menuItem}>
+              <Ionicons name="fingerprint" size={20} color="#666" />
+              <Text style={[styles.menuItemText, { fontSize: 12, color: '#666' }]}>
+                Session: {sessionId.slice(-8)}
+              </Text>
+            </View>
+          )}
 
-      <MenuModal
-        visible={isMenuVisible}
-        onClose={() => setIsMenuVisible(false)}
-        isConnected={isConnected}
-        isConversationMode={isConversationMode}
-        isAudioStreaming={isAudioStreaming}
-        messageCount={messages.length}
-        onToggleConversationMode={() => setIsConversationMode(!isConversationMode)}
-        onOpenChat={() => {
-          setIsMenuVisible(false);
-          setIsChatVisible(true);
-        }}
-      />
-    </View>
+          {/* Streaming Status */}
+          <View style={styles.menuItem}>
+            <Ionicons name="radio" size={20} color={isStreaming ? '#34C759' : '#666'} />
+            <Text style={styles.menuItemText}>Real-time Streaming</Text>
+            <View style={[
+              styles.toggleIndicator,
+              { backgroundColor: isStreaming ? '#34C759' : '#666' }
+            ]} />
+          </View>
+
+          {/* Audio Stream Progress */}
+          {audioStreamState.isStreaming && (
+            <View style={styles.menuItem}>
+              <Ionicons name="musical-notes" size={20} color="#FF9500" />
+              <Text style={styles.menuItemText}>
+                Audio: {audioStreamState.receivedChunks}/{audioStreamState.totalChunks}
+              </Text>
+            </View>
+          )}
+
+          {/* Conversation Mode Toggle */}
+          <TouchableOpacity
+            onPress={() => {
+              if (isConversationMode) {
+                setIsConversationMode(false);
+                if (isStreaming) {
+                  stopAudioStreaming();
+                }
+              } else {
+                setIsConversationMode(true);
+                startAudioStreaming();
+              }
+              toggleMenu();
+            }}
+            style={styles.menuItem}
+          >
+            <Ionicons name={isConversationMode ? "pause" : "play"} size={20} color="white" />
+            <Text style={styles.menuItemText}>Continuous Mode</Text>
+            <View style={[
+              styles.toggleIndicator,
+              { backgroundColor: isConversationMode ? '#34C759' : '#666' }
+            ]} />
+          </TouchableOpacity>
+          
+          {/* Sign Out */}
+          <TouchableOpacity
+            onPress={() => {
+              signOut();
+              toggleMenu();
+            }}
+            style={[styles.menuItem, { borderTopWidth: 1, borderTopColor: '#333', marginTop: 8, paddingTop: 16 }]}
+          >
+            <Ionicons name="log-out-outline" size={20} color="#FF3B30" />
+            <Text style={[styles.menuItemText, { color: '#FF3B30' }]}>Sign Out</Text>
+          </TouchableOpacity>
+        </Animated.View>
+
+        {/* Collapsible Chat Interface */}
+        <Animated.View style={[
+          styles.chatContainer,
+          {
+            transform: [{
+              translateY: chatAnimatedValue.interpolate({
+                inputRange: [0, 1],
+                outputRange: [height, 0]
+              })
+            }],
+            opacity: chatAnimatedValue
+          }
+        ]}>
+          <View style={styles.chatHeader}>
+            <Text style={styles.chatTitle}>Conversation</Text>
+            <View style={styles.chatHeaderActions}>
+              <TouchableOpacity onPress={() => {/* Clear messages */}} style={styles.chatHeaderButton}>
+                <Ionicons name="trash-outline" size={20} color="#8E8E93" />
+              </TouchableOpacity>
+              <TouchableOpacity onPress={toggleChat} style={styles.chatHeaderButton}>
+                <Ionicons name="close" size={20} color="#8E8E93" />
+              </TouchableOpacity>
+            </View>
+          </View>
+          
+          <FlatList
+            ref={flatListRef}
+            data={messages}
+            keyExtractor={(item) => item.id}
+            renderItem={renderMessage}
+            style={styles.messagesList}
+            contentContainerStyle={styles.messagesContent}
+            showsVerticalScrollIndicator={false}
+            ListEmptyComponent={() => (
+              <View style={styles.emptyState}>
+                <Ionicons name="chatbubbles-outline" size={48} color="#48484A" />
+                <Text style={styles.emptyText}>No messages yet</Text>
+                <Text style={styles.emptySubtext}>Start a conversation by tapping the ring</Text>
+              </View>
+            )}
+          />
+        </Animated.View>
+
+        {/* Menu Overlay */}
+        {isMenuVisible && (
+          <TouchableOpacity
+            style={styles.menuOverlay}
+            onPress={toggleMenu}
+            activeOpacity={1}
+          />
+        )}
+      </SafeAreaView>
+    </>
   );
 }
 
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#000',
+    backgroundColor: '#000000',
   },
   authContainer: {
     flex: 1,
@@ -605,58 +716,87 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     padding: 20,
   },
+  authContent: {
+    alignItems: 'center',
+    maxWidth: 300,
+    width: '100%',
+  },
   authTitle: {
-    fontSize: 24,
+    fontSize: 28,
     fontWeight: 'bold',
-    color: '#fff',
-    marginBottom: 10,
+    color: '#FFFFFF',
+    marginBottom: 8,
+    textAlign: 'center',
   },
   authSubtitle: {
     fontSize: 16,
-    color: '#ccc',
-    marginBottom: 30,
+    color: '#8E8E93',
+    marginBottom: 32,
+    textAlign: 'center',
   },
-  authButton: {
-    backgroundColor: '#4A9EFF',
-    padding: 15,
-    borderRadius: 10,
-    minWidth: 200,
+  errorContainer: {
+    backgroundColor: '#FF3B3020',
+    borderColor: '#FF3B30',
+    borderWidth: 1,
+    borderRadius: 8,
+    padding: 12,
+    marginBottom: 20,
+    width: '100%',
+    flexDirection: 'row',
     alignItems: 'center',
   },
+  errorText: {
+    color: '#FF3B30',
+    fontSize: 14,
+    flex: 1,
+  },
+  errorDismiss: {
+    marginLeft: 8,
+    padding: 4,
+  },
+  authButton: {
+    backgroundColor: '#007AFF',
+    paddingHorizontal: 32,
+    paddingVertical: 16,
+    borderRadius: 12,
+    minWidth: 200,
+    alignItems: 'center',
+    marginBottom: 16,
+  },
+  authButtonDisabled: {
+    backgroundColor: '#007AFF80',
+  },
   authButtonText: {
-    color: '#fff',
+    color: '#FFFFFF',
     fontSize: 16,
     fontWeight: '600',
   },
-  menuButton: {
-    position: 'absolute',
-    top: 60,
-    left: 20,
-    zIndex: 1000,
-    padding: 10,
-    backgroundColor: 'rgba(255, 255, 255, 0.1)',
-    borderRadius: 25,
+  authFooter: {
+    fontSize: 12,
+    color: '#666666',
+    textAlign: 'center',
   },
   mainContainer: {
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
+    paddingHorizontal: 40,
   },
   ringContainer: {
-    width: 300,
-    height: 300,
-    justifyContent: 'center',
     alignItems: 'center',
+    justifyContent: 'center',
+    position: 'relative',
   },
   outerGlowRing: {
     position: 'absolute',
     width: 300,
     height: 300,
     borderRadius: 150,
-    borderWidth: 2,
-    shadowOffset: { width: 0, height: 0 },
-    shadowOpacity: 0.5,
+    borderWidth: 1,
+    borderColor: '#007AFF',
+    shadowOpacity: 0.8,
     shadowRadius: 20,
+    shadowOffset: { width: 0, height: 0 },
     elevation: 10,
   },
   pulseRing: {
@@ -664,19 +804,21 @@ const styles = StyleSheet.create({
     width: 280,
     height: 280,
     borderRadius: 140,
-    borderWidth: 3,
+    borderWidth: 2,
+    borderColor: '#007AFF',
   },
   mainRing: {
     width: 200,
     height: 200,
     borderRadius: 100,
     borderWidth: 4,
+    borderColor: '#007AFF',
+    shadowOpacity: 0.6,
+    shadowRadius: 15,
+    shadowOffset: { width: 0, height: 0 },
+    elevation: 8,
     justifyContent: 'center',
     alignItems: 'center',
-    shadowOffset: { width: 0, height: 0 },
-    shadowOpacity: 0.8,
-    shadowRadius: 15,
-    elevation: 8,
   },
   innerRingContent: {
     width: 160,
@@ -688,26 +830,196 @@ const styles = StyleSheet.create({
   listeningIndicator: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 4,
+    justifyContent: 'center',
   },
   waveBar: {
-    width: 4,
-    height: 20,
-    borderRadius: 2,
+    width: 6,
+    height: 25,
+    marginHorizontal: 3,
+    borderRadius: 3,
+    backgroundColor: '#007AFF',
   },
-  streamingBar: {
-    width: 4,
-    height: 24,
-    borderRadius: 2,
-    marginLeft: 2,
+  streamingIndicator: {
+    width: 8,
+    height: 30,
+    marginLeft: 6,
+    borderRadius: 4,
+    backgroundColor: '#FF3B30',
   },
   conversationIndicator: {
     flexDirection: 'row',
-    gap: 8,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   conversationDot: {
     width: 8,
     height: 8,
     borderRadius: 4,
+    backgroundColor: '#34C759',
+    marginHorizontal: 4,
+  },
+  menuToggleButton: {
+    position: 'absolute',
+    top: 60,
+    left: 20,
+    width: 50,
+    height: 50,
+    borderRadius: 25,
+    backgroundColor: '#007AFF',
+    justifyContent: 'center',
+    alignItems: 'center',
+    elevation: 4,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.3,
+    shadowRadius: 4,
+  },
+  floatingMenu: {
+    position: 'absolute',
+    top: 120,
+    left: 20,
+    backgroundColor: '#1C1C1E',
+    borderRadius: 12,
+    padding: 16,
+    minWidth: 180,
+    elevation: 8,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+  },
+  menuOverlay: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundColor: 'rgba(0,0,0,0.3)',
+  },
+  menuItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 12,
+    paddingHorizontal: 8,
+    borderRadius: 8,
+  },
+  menuItemText: {
+    fontSize: 16,
+    color: '#FFFFFF',
+    marginLeft: 12,
+    flex: 1,
+  },
+  menuBadge: {
+    backgroundColor: '#FF3B30',
+    borderRadius: 10,
+    minWidth: 20,
+    height: 20,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginLeft: 8,
+  },
+  menuBadgeText: {
+    color: 'white',
+    fontSize: 12,
+    fontWeight: 'bold',
+  },
+  toggleIndicator: {
+    width: 12,
+    height: 12,
+    borderRadius: 6,
+    marginLeft: 8,
+  },
+  connectionDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+  },
+  chatContainer: {
+    position: 'absolute',
+    top: 120,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundColor: '#1C1C1E',
+    borderTopLeftRadius: 20,
+    borderTopRightRadius: 20,
+  },
+  chatHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingHorizontal: 20,
+    paddingVertical: 15,
+    borderBottomWidth: 1,
+    borderBottomColor: '#2C2C2E',
+  },
+  chatTitle: {
+    fontSize: 18,
+    fontWeight: '600',
+    color: '#FFFFFF',
+  },
+  chatHeaderActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  chatHeaderButton: {
+    marginLeft: 16,
+    padding: 4,
+  },
+  messagesList: {
+    flex: 1,
+  },
+  messagesContent: {
+    padding: 16,
+    flexGrow: 1,
+  },
+  messageContainer: {
+    marginBottom: 16,
+    maxWidth: '85%',
+  },
+  userMessage: {
+    alignSelf: 'flex-end',
+  },
+  botMessage: {
+    alignSelf: 'flex-start',
+  },
+  messageBubble: {
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    borderRadius: 18,
+    marginBottom: 4,
+    position: 'relative',
+  },
+  messageText: {
+    fontSize: 16,
+    lineHeight: 20,
+  },
+  voiceIndicator: {
+    position: 'absolute',
+    bottom: 4,
+    right: 8,
+    padding: 2,
+  },
+  timestamp: {
+    fontSize: 11,
+    color: '#8E8E93',
+    textAlign: 'center',
+  },
+  emptyState: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingVertical: 60,
+  },
+  emptyText: {
+    fontSize: 18,
+    color: '#FFFFFF',
+    marginTop: 16,
+    marginBottom: 8,
+  },
+  emptySubtext: {
+    fontSize: 14,
+    color: '#8E8E93',
+    textAlign: 'center',
   },
 });

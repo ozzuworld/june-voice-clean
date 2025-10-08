@@ -1,4 +1,4 @@
-// app/(tabs)/chat.tsx - Clean Main Screen with Ring as Record Button
+// app/(tabs)/chat.tsx - Enhanced Ring Design with Continuous Conversation
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import {
   View,
@@ -46,14 +46,22 @@ export default function ChatScreen() {
   const [connectionStatus, setConnectionStatus] = useState('Disconnected');
   const [isChatVisible, setIsChatVisible] = useState(false);
   const [isMenuVisible, setIsMenuVisible] = useState(false);
+  const [isConversationMode, setIsConversationMode] = useState(false);
   
   const flatListRef = useRef<FlatList>(null);
   const wsRef = useRef<WebSocket | null>(null);
   const recordingRef = useRef<Audio.Recording | null>(null);
   const chatAnimatedValue = useRef(new Animated.Value(0)).current;
   const menuAnimatedValue = useRef(new Animated.Value(0)).current;
-  const pulseAnimatedValue = useRef(new Animated.Value(1)).current;
-  const ringAnimatedValue = useRef(new Animated.Value(0)).current;
+  
+  // Enhanced ring animations
+  const mainRingScale = useRef(new Animated.Value(1)).current;
+  const mainRingOpacity = useRef(new Animated.Value(0.8)).current;
+  const glowRingScale = useRef(new Animated.Value(1)).current;
+  const glowRingOpacity = useRef(new Animated.Value(0.3)).current;
+  const pulseRingScale = useRef(new Animated.Value(1)).current;
+  const pulseRingOpacity = useRef(new Animated.Value(0)).current;
+  const rotationValue = useRef(new Animated.Value(0)).current;
 
   // Auto-scroll to bottom
   useEffect(() => {
@@ -62,48 +70,119 @@ export default function ChatScreen() {
     }
   }, [messages.length]);
 
-  // Pulse animation for voice button
+  // Enhanced ring animations based on state
   useEffect(() => {
-    if (isListening || isProcessing) {
-      const pulseAnimation = Animated.loop(
+    // Stop all animations first
+    mainRingScale.stopAnimation();
+    glowRingScale.stopAnimation();
+    pulseRingScale.stopAnimation();
+    rotationValue.stopAnimation();
+
+    if (!isConnected) {
+      // Disconnected state - subtle pulse
+      Animated.loop(
         Animated.sequence([
-          Animated.timing(pulseAnimatedValue, {
-            toValue: 1.2,
-            duration: 1000,
+          Animated.timing(mainRingOpacity, {
+            toValue: 0.3,
+            duration: 1500,
             useNativeDriver: true,
           }),
-          Animated.timing(pulseAnimatedValue, {
-            toValue: 1,
-            duration: 1000,
+          Animated.timing(mainRingOpacity, {
+            toValue: 0.6,
+            duration: 1500,
             useNativeDriver: true,
           }),
         ])
-      );
-      pulseAnimation.start();
-      return () => pulseAnimation.stop();
-    } else {
-      Animated.timing(pulseAnimatedValue, {
-        toValue: 1,
-        duration: 300,
-        useNativeDriver: true,
-      }).start();
-    }
-  }, [isListening, isProcessing]);
-
-  // Ring animation for voice states
-  useEffect(() => {
-    if (isListening) {
-      Animated.loop(
-        Animated.timing(ringAnimatedValue, {
-          toValue: 1,
-          duration: 2000,
-          useNativeDriver: true,
-        })
       ).start();
+    } else if (isListening) {
+      // Listening state - active glow + rotation
+      Animated.parallel([
+        Animated.loop(
+          Animated.timing(rotationValue, {
+            toValue: 1,
+            duration: 3000,
+            useNativeDriver: true,
+          })
+        ),
+        Animated.loop(
+          Animated.sequence([
+            Animated.timing(glowRingScale, {
+              toValue: 1.1,
+              duration: 1000,
+              useNativeDriver: true,
+            }),
+            Animated.timing(glowRingScale, {
+              toValue: 1,
+              duration: 1000,
+              useNativeDriver: true,
+            }),
+          ])
+        ),
+        Animated.loop(
+          Animated.sequence([
+            Animated.timing(pulseRingScale, {
+              toValue: 1.3,
+              duration: 800,
+              useNativeDriver: true,
+            }),
+            Animated.timing(pulseRingScale, {
+              toValue: 1,
+              duration: 800,
+              useNativeDriver: true,
+            }),
+          ])
+        ),
+      ]).start();
+      
+      mainRingOpacity.setValue(1);
+      pulseRingOpacity.setValue(0.4);
+      glowRingOpacity.setValue(0.6);
+    } else if (isProcessing) {
+      // Processing state - steady glow + slow rotation
+      Animated.parallel([
+        Animated.loop(
+          Animated.timing(rotationValue, {
+            toValue: 1,
+            duration: 4000,
+            useNativeDriver: true,
+          })
+        ),
+        Animated.timing(mainRingScale, {
+          toValue: 1.05,
+          duration: 300,
+          useNativeDriver: true,
+        }),
+      ]).start();
+      
+      mainRingOpacity.setValue(0.9);
+      glowRingOpacity.setValue(0.5);
+    } else if (isConversationMode) {
+      // Conversation mode - gentle breathing effect
+      Animated.loop(
+        Animated.sequence([
+          Animated.timing(mainRingScale, {
+            toValue: 1.02,
+            duration: 2000,
+            useNativeDriver: true,
+          }),
+          Animated.timing(mainRingScale, {
+            toValue: 1,
+            duration: 2000,
+            useNativeDriver: true,
+          }),
+        ])
+      ).start();
+      
+      mainRingOpacity.setValue(0.9);
+      glowRingOpacity.setValue(0.4);
     } else {
-      ringAnimatedValue.setValue(0);
+      // Connected idle state - soft glow
+      mainRingScale.setValue(1);
+      mainRingOpacity.setValue(0.8);
+      glowRingOpacity.setValue(0.3);
+      pulseRingOpacity.setValue(0);
     }
-  }, [isListening]);
+  }, [isConnected, isListening, isProcessing, isConversationMode]);
 
   // Toggle chat visibility
   const toggleChat = () => {
@@ -159,6 +238,7 @@ export default function ChatScreen() {
         setIsConnected(false);
         setConnectionStatus('Disconnected');
         setIsProcessing(false);
+        setIsConversationMode(false);
       };
 
       wsRef.current.onerror = (error) => {
@@ -166,6 +246,7 @@ export default function ChatScreen() {
         setIsConnected(false);
         setConnectionStatus('Error');
         setIsProcessing(false);
+        setIsConversationMode(false);
       };
 
     } catch (error) {
@@ -191,8 +272,6 @@ export default function ChatScreen() {
             status: 'sent',
           };
           setMessages(prev => [...prev, botMessage]);
-          // REMOVED: Auto-show chat when receiving response
-          // Chat stays closed unless user manually opens it
         }
         break;
 
@@ -209,7 +288,16 @@ export default function ChatScreen() {
             ));
           }
           
-          setIsProcessing(false);
+          // After audio response, prepare for next input in conversation mode
+          if (isConversationMode) {
+            setTimeout(() => {
+              setIsProcessing(false);
+              // Auto-restart listening for continuous conversation
+              startVoiceRecording();
+            }, 500);
+          } else {
+            setIsProcessing(false);
+          }
         }
         break;
 
@@ -224,6 +312,7 @@ export default function ChatScreen() {
       case 'error':
         console.error('❌ WebSocket error:', data.message);
         setIsProcessing(false);
+        setIsConversationMode(false);
         Alert.alert('Error', data.message || 'Unknown error occurred');
         break;
     }
@@ -353,12 +442,17 @@ export default function ChatScreen() {
       } else {
         Alert.alert('No Speech Detected', 'Please try speaking more clearly');
         setIsProcessing(false);
+        if (isConversationMode) {
+          // Restart listening in conversation mode
+          setTimeout(() => startVoiceRecording(), 1000);
+        }
       }
 
     } catch (error) {
       console.error('❌ Voice processing failed:', error);
       Alert.alert('Voice Processing Error', error.message || 'Failed to process voice');
       setIsProcessing(false);
+      setIsConversationMode(false);
     }
   };
 
@@ -438,16 +532,23 @@ export default function ChatScreen() {
     }
   };
 
-  // Handle voice button press (now the blue ring itself)
-  const handleVoiceButtonPress = () => {
+  // Handle main ring tap - Enhanced for continuous conversation
+  const handleMainRingPress = () => {
     if (!isConnected) {
       Alert.alert('Not Connected', 'Please wait for connection to establish');
       return;
     }
 
-    if (isListening) {
-      stopVoiceRecording();
+    if (isConversationMode) {
+      // Stop conversation mode
+      setIsConversationMode(false);
+      if (isListening) {
+        stopVoiceRecording();
+      }
+      setIsProcessing(false);
     } else {
+      // Start conversation mode
+      setIsConversationMode(true);
       startVoiceRecording();
     }
   };
@@ -488,70 +589,99 @@ export default function ChatScreen() {
 
   const getStatusText = () => {
     if (!isConnected) return 'Connecting...';
-    if (isListening) return 'Listening...';
-    if (isProcessing) return 'Processing...';
-    return 'Tap to speak';
+    if (isConversationMode && isListening) return 'Listening...';
+    if (isConversationMode && isProcessing) return 'Processing...';
+    if (isConversationMode) return 'Conversation active';
+    return 'Tap to start conversation';
   };
 
-  const getButtonColor = () => {
+  const getRingColor = () => {
     if (!isConnected) return '#666666';
     if (isListening) return '#FF3B30';
     if (isProcessing) return '#FF9500';
+    if (isConversationMode) return '#34C759';
     return '#007AFF';
   };
+
+  const spin = rotationValue.interpolate({
+    inputRange: [0, 1],
+    outputRange: ['0deg', '360deg']
+  });
 
   return (
     <>
       <StatusBar barStyle="light-content" backgroundColor="#000000" />
       <SafeAreaView style={styles.container}>
-        {/* Clean Main Interface - Just the Blue Ring */}
+        {/* Clean Main Interface - Enhanced Ring Design */}
         <View style={styles.mainContainer}>
-          {/* Voice Button with Blue Ring - NOW THE MAIN INTERACTION */}
+          {/* Enhanced Multi-Layer Ring System */}
           <TouchableOpacity
-            onPress={handleVoiceButtonPress}
-            disabled={!isConnected || (isProcessing && !isListening)}
-            style={styles.voiceButtonContainer}
+            onPress={handleMainRingPress}
+            disabled={!isConnected}
+            style={styles.ringContainer}
             activeOpacity={0.8}
           >
-            {/* Outer Ring Animation */}
+            {/* Outer Glow Ring */}
             <Animated.View style={[
-              styles.outerRing,
+              styles.outerGlowRing,
               {
-                transform: [{ scale: pulseAnimatedValue }],
-                opacity: ringAnimatedValue.interpolate({
-                  inputRange: [0, 1],
-                  outputRange: [0.3, 0.8]
-                }),
-                borderColor: getButtonColor(),
+                transform: [{ scale: glowRingScale }],
+                opacity: glowRingOpacity,
+                borderColor: getRingColor(),
+                shadowColor: getRingColor(),
               }
             ]} />
             
-            {/* Middle Ring */}
-            <View style={[
-              styles.middleRing,
-              { borderColor: getButtonColor() }
+            {/* Pulse Ring (only during listening) */}
+            <Animated.View style={[
+              styles.pulseRing,
+              {
+                transform: [{ scale: pulseRingScale }],
+                opacity: pulseRingOpacity,
+                borderColor: getRingColor(),
+              }
             ]} />
             
-            {/* Inner Ring */}
-            <View style={[
-              styles.innerRing,
-              { 
-                borderColor: getButtonColor(),
-                backgroundColor: isListening ? getButtonColor() + '20' : 'transparent'
+            {/* Main Ring with Rotation */}
+            <Animated.View style={[
+              styles.mainRing,
+              {
+                transform: [
+                  { scale: mainRingScale },
+                  { rotate: spin }
+                ],
+                opacity: mainRingOpacity,
+                borderColor: getRingColor(),
+                shadowColor: getRingColor(),
               }
             ]}>
-              {/* Show processing indicator or pulse effect */}
-              {isProcessing && !isListening && (
-                <ActivityIndicator size="large" color={getButtonColor()} />
-              )}
-              {isListening && (
-                <View style={styles.listeningIndicator}>
-                  <View style={[styles.waveBar, { backgroundColor: getButtonColor() }]} />
-                  <View style={[styles.waveBar, { backgroundColor: getButtonColor() }]} />
-                  <View style={[styles.waveBar, { backgroundColor: getButtonColor() }]} />
-                </View>
-              )}
-            </View>
+              {/* Inner Ring Content */}
+              <View style={[
+                styles.innerRingContent,
+                {
+                  backgroundColor: getRingColor() + '10',
+                }
+              ]}>
+                {isProcessing && (
+                  <ActivityIndicator size="large" color={getRingColor()} />
+                )}
+                {isListening && (
+                  <View style={styles.listeningIndicator}>
+                    <Animated.View style={[styles.waveBar, { backgroundColor: getRingColor() }]} />
+                    <Animated.View style={[styles.waveBar, { backgroundColor: getRingColor() }]} />
+                    <Animated.View style={[styles.waveBar, { backgroundColor: getRingColor() }]} />
+                    <Animated.View style={[styles.waveBar, { backgroundColor: getRingColor() }]} />
+                  </View>
+                )}
+                {isConversationMode && !isListening && !isProcessing && (
+                  <View style={styles.conversationIndicator}>
+                    <View style={[styles.conversationDot, { backgroundColor: getRingColor() }]} />
+                    <View style={[styles.conversationDot, { backgroundColor: getRingColor() }]} />
+                    <View style={[styles.conversationDot, { backgroundColor: getRingColor() }]} />
+                  </View>
+                )}
+              </View>
+            </Animated.View>
           </TouchableOpacity>
 
           {/* Minimal Status Text */}
@@ -612,7 +742,24 @@ export default function ChatScreen() {
             <Text style={styles.menuItemText}>{connectionStatus}</Text>
           </View>
 
-          {/* Future menu items can be added here */}
+          {/* Conversation Mode Toggle */}
+          <TouchableOpacity
+            onPress={() => {
+              setIsConversationMode(!isConversationMode);
+              if (isConversationMode && isListening) {
+                stopVoiceRecording();
+              }
+              toggleMenu();
+            }}
+            style={styles.menuItem}
+          >
+            <Ionicons name={isConversationMode ? "pause" : "play"} size={20} color="white" />
+            <Text style={styles.menuItemText}>Continuous Mode</Text>
+            <View style={[
+              styles.toggleIndicator,
+              { backgroundColor: isConversationMode ? '#34C759' : '#666' }
+            ]} />
+          </TouchableOpacity>
         </Animated.View>
 
         {/* Collapsible Chat Interface */}
@@ -652,7 +799,7 @@ export default function ChatScreen() {
               <View style={styles.emptyState}>
                 <Ionicons name="chatbubbles-outline" size={48} color="#48484A" />
                 <Text style={styles.emptyText}>No messages yet</Text>
-                <Text style={styles.emptySubtext}>Start a conversation by speaking</Text>
+                <Text style={styles.emptySubtext}>Start a conversation by tapping the ring</Text>
               </View>
             )}
           />
@@ -682,34 +829,49 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     paddingHorizontal: 40,
   },
-  voiceButtonContainer: {
+  ringContainer: {
     alignItems: 'center',
     justifyContent: 'center',
-    marginBottom: 40,
+    marginBottom: 60,
     position: 'relative',
   },
-  outerRing: {
+  outerGlowRing: {
     position: 'absolute',
-    width: 240,
-    height: 240,
-    borderRadius: 120,
+    width: 300,
+    height: 300,
+    borderRadius: 150,
+    borderWidth: 1,
+    borderColor: '#007AFF',
+    shadowOpacity: 0.8,
+    shadowRadius: 20,
+    shadowOffset: { width: 0, height: 0 },
+    elevation: 10,
+  },
+  pulseRing: {
+    position: 'absolute',
+    width: 280,
+    height: 280,
+    borderRadius: 140,
     borderWidth: 2,
     borderColor: '#007AFF',
   },
-  middleRing: {
-    position: 'absolute',
-    width: 180,
-    height: 180,
-    borderRadius: 90,
-    borderWidth: 3,
-    borderColor: '#007AFF',
-  },
-  innerRing: {
-    width: 120,
-    height: 120,
-    borderRadius: 60,
+  mainRing: {
+    width: 200,
+    height: 200,
+    borderRadius: 100,
     borderWidth: 4,
     borderColor: '#007AFF',
+    shadowOpacity: 0.6,
+    shadowRadius: 15,
+    shadowOffset: { width: 0, height: 0 },
+    elevation: 8,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  innerRingContent: {
+    width: 160,
+    height: 160,
+    borderRadius: 80,
     justifyContent: 'center',
     alignItems: 'center',
   },
@@ -719,11 +881,23 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   waveBar: {
-    width: 4,
-    height: 20,
-    marginHorizontal: 2,
-    borderRadius: 2,
+    width: 6,
+    height: 25,
+    marginHorizontal: 3,
+    borderRadius: 3,
     backgroundColor: '#007AFF',
+  },
+  conversationIndicator: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  conversationDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: '#34C759',
+    marginHorizontal: 4,
   },
   statusText: {
     fontSize: 18,
@@ -754,7 +928,7 @@ const styles = StyleSheet.create({
     backgroundColor: '#1C1C1E',
     borderRadius: 12,
     padding: 16,
-    minWidth: 160,
+    minWidth: 180,
     elevation: 8,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 4 },
@@ -795,6 +969,12 @@ const styles = StyleSheet.create({
     color: 'white',
     fontSize: 12,
     fontWeight: 'bold',
+  },
+  toggleIndicator: {
+    width: 12,
+    height: 12,
+    borderRadius: 6,
+    marginLeft: 8,
   },
   connectionDot: {
     width: 8,

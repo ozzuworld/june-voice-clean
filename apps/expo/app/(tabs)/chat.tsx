@@ -129,6 +129,9 @@ export default function ChatScreen() {
                 : msg
             ));
           }
+          
+          // FIX: Reset processing state after audio response to re-enable button
+          setIsProcessing(false);
         }
         break;
 

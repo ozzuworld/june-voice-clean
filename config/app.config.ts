@@ -1,4 +1,4 @@
-// config/app.config.ts - HTTP configuration for development
+// config/app.config.ts - Enhanced configuration for WebSocket voice chat
 const APP_CONFIG = {
   // ✅ IMPORTANT: Use HTTP if certificate is self-signed/staging
   // Change to 'https' once you have a proper certificate
@@ -12,6 +12,12 @@ const APP_CONFIG = {
   // ✅ Make sure this matches your scheme in app.json
   REDIRECT_SCHEME: 'june',
 
+  // Add development configuration
+  DEVELOPMENT: {
+    // Use wildcard for any development IP
+    REDIRECT_URI_PATTERN: 'exp://*/--/auth/callback',
+  },
+
   SERVICES: {
     orchestrator: 'https://api.ozzu.world',
     stt: 'https://stt.ozzu.world',
@@ -20,10 +26,29 @@ const APP_CONFIG = {
   },
 
   ENDPOINTS: {
-    CHAT: '/v1/chat',
+    // ✅ NEW: WebSocket endpoint for real-time chat (replaces /v1/chat)
+    WEBSOCKET: '/ws',
+    
+    // ✅ UPDATED: STT endpoint for voice transcription
     STT: '/v1/transcribe',
+    
+    // Keep existing endpoints for compatibility
+    CHAT: '/v1/chat',  // Fallback HTTP endpoint
     TTS: '/tts/generate',
     VOICE_PROCESS: '/v1/voice-process',
+    
+    // ✅ NEW: Health and status endpoints
+    HEALTH: '/healthz',
+    STATUS: '/status',
+    STT_WEBHOOK: '/v1/stt/webhook',
+  },
+
+  // ✅ NEW: WebSocket configuration
+  WEBSOCKET: {
+    AUTO_RECONNECT: true,
+    RECONNECT_DELAY: 3000,
+    MAX_RECONNECT_ATTEMPTS: 5,
+    PING_INTERVAL: 30000,
   },
 
   TTS: {
@@ -40,6 +65,7 @@ const APP_CONFIG = {
     TTS: 90000,
     CHAT: 60000,
     VOICE: 120000,
+    WEBSOCKET_CONNECT: 10000,  // ✅ NEW: WebSocket connection timeout
   },
 
   DEBUG: {
@@ -47,6 +73,7 @@ const APP_CONFIG = {
     VERBOSE_LOGS: true,
     MOCK_RESPONSES: false,
     TTS_FALLBACK: true,
+    WEBSOCKET_LOGS: true,  // ✅ NEW: WebSocket debugging
   },
 
   STT: {
@@ -54,6 +81,21 @@ const APP_CONFIG = {
     MAX_DURATION_MS: 300000,
     AUTO_DETECT_LANGUAGE: true,
     DEFAULT_LANGUAGE: 'en',
+  },
+
+  // ✅ NEW: Audio configuration
+  AUDIO: {
+    RECORDING: {
+      EXTENSION: '.m4a',
+      SAMPLE_RATE: 44100,
+      CHANNELS: 2,
+      BIT_RATE: 128000,
+      QUALITY: 'high',
+    },
+    PLAYBACK: {
+      AUTO_PLAY: true,
+      VOLUME: 1.0,
+    },
   },
 } as const;
 

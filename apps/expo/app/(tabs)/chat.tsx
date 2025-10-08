@@ -1,4 +1,4 @@
-// app/(tabs)/chat.tsx - Modern Dark UI with Collapsible Chat
+// app/(tabs)/chat.tsx - Clean Main Screen with Ring as Record Button
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import {
   View,
@@ -45,11 +45,13 @@ export default function ChatScreen() {
   const [isConnected, setIsConnected] = useState(false);
   const [connectionStatus, setConnectionStatus] = useState('Disconnected');
   const [isChatVisible, setIsChatVisible] = useState(false);
+  const [isMenuVisible, setIsMenuVisible] = useState(false);
   
   const flatListRef = useRef<FlatList>(null);
   const wsRef = useRef<WebSocket | null>(null);
   const recordingRef = useRef<Audio.Recording | null>(null);
   const chatAnimatedValue = useRef(new Animated.Value(0)).current;
+  const menuAnimatedValue = useRef(new Animated.Value(0)).current;
   const pulseAnimatedValue = useRef(new Animated.Value(1)).current;
   const ringAnimatedValue = useRef(new Animated.Value(0)).current;
 
@@ -66,7 +68,7 @@ export default function ChatScreen() {
       const pulseAnimation = Animated.loop(
         Animated.sequence([
           Animated.timing(pulseAnimatedValue, {
-            toValue: 1.1,
+            toValue: 1.2,
             duration: 1000,
             useNativeDriver: true,
           }),
@@ -109,6 +111,19 @@ export default function ChatScreen() {
     setIsChatVisible(!isChatVisible);
     
     Animated.spring(chatAnimatedValue, {
+      toValue,
+      useNativeDriver: true,
+      tension: 100,
+      friction: 8,
+    }).start();
+  };
+
+  // Toggle menu visibility
+  const toggleMenu = () => {
+    const toValue = isMenuVisible ? 0 : 1;
+    setIsMenuVisible(!isMenuVisible);
+    
+    Animated.spring(menuAnimatedValue, {
       toValue,
       useNativeDriver: true,
       tension: 100,
@@ -176,10 +191,8 @@ export default function ChatScreen() {
             status: 'sent',
           };
           setMessages(prev => [...prev, botMessage]);
-          // Auto-show chat when receiving response
-          if (!isChatVisible) {
-            toggleChat();
-          }
+          // REMOVED: Auto-show chat when receiving response
+          // Chat stays closed unless user manually opens it
         }
         break;
 
@@ -425,7 +438,7 @@ export default function ChatScreen() {
     }
   };
 
-  // Handle voice button press
+  // Handle voice button press (now the blue ring itself)
   const handleVoiceButtonPress = () => {
     if (!isConnected) {
       Alert.alert('Not Connected', 'Please wait for connection to establish');
@@ -491,16 +504,15 @@ export default function ChatScreen() {
     <>
       <StatusBar barStyle="light-content" backgroundColor="#000000" />
       <SafeAreaView style={styles.container}>
-        {/* Main Voice Interface */}
+        {/* Clean Main Interface - Just the Blue Ring */}
         <View style={styles.mainContainer}>
-          {/* Brand */}
-          <View style={styles.brandContainer}>
-            <Text style={styles.brandText}>OZZU</Text>
-            <Text style={styles.brandSubtext}>AI Voice Assistant</Text>
-          </View>
-
-          {/* Voice Button with Blue Ring */}
-          <View style={styles.voiceButtonContainer}>
+          {/* Voice Button with Blue Ring - NOW THE MAIN INTERACTION */}
+          <TouchableOpacity
+            onPress={handleVoiceButtonPress}
+            disabled={!isConnected || (isProcessing && !isListening)}
+            style={styles.voiceButtonContainer}
+            activeOpacity={0.8}
+          >
             {/* Outer Ring Animation */}
             <Animated.View style={[
               styles.outerRing,
@@ -509,73 +521,99 @@ export default function ChatScreen() {
                 opacity: ringAnimatedValue.interpolate({
                   inputRange: [0, 1],
                   outputRange: [0.3, 0.8]
-                })
+                }),
+                borderColor: getButtonColor(),
               }
+            ]} />
+            
+            {/* Middle Ring */}
+            <View style={[
+              styles.middleRing,
+              { borderColor: getButtonColor() }
             ]} />
             
             {/* Inner Ring */}
             <View style={[
               styles.innerRing,
-              { borderColor: getButtonColor() }
-            ]} />
-            
-            {/* Voice Button */}
-            <TouchableOpacity
-              onPress={handleVoiceButtonPress}
-              disabled={!isConnected || (isProcessing && !isListening)}
-              style={[
-                styles.voiceButton,
-                {
-                  backgroundColor: getButtonColor(),
-                  opacity: (!isConnected || (isProcessing && !isListening)) ? 0.5 : 1,
-                }
-              ]}
-            >
-              {isProcessing && !isListening ? (
-                <ActivityIndicator size="large" color="white" />
-              ) : isListening ? (
-                <Ionicons name="stop" size={32} color="white" />
-              ) : (
-                <Ionicons name="mic" size={32} color="white" />
+              { 
+                borderColor: getButtonColor(),
+                backgroundColor: isListening ? getButtonColor() + '20' : 'transparent'
+              }
+            ]}>
+              {/* Show processing indicator or pulse effect */}
+              {isProcessing && !isListening && (
+                <ActivityIndicator size="large" color={getButtonColor()} />
               )}
-            </TouchableOpacity>
-          </View>
+              {isListening && (
+                <View style={styles.listeningIndicator}>
+                  <View style={[styles.waveBar, { backgroundColor: getButtonColor() }]} />
+                  <View style={[styles.waveBar, { backgroundColor: getButtonColor() }]} />
+                  <View style={[styles.waveBar, { backgroundColor: getButtonColor() }]} />
+                </View>
+              )}
+            </View>
+          </TouchableOpacity>
 
-          {/* Status Text */}
+          {/* Minimal Status Text */}
           <Text style={styles.statusText}>
             {getStatusText()}
           </Text>
+        </View>
 
-          {/* Connection Status */}
-          <View style={styles.connectionContainer}>
+        {/* Floating Menu Button (Left Side) */}
+        <TouchableOpacity
+          onPress={toggleMenu}
+          style={styles.menuToggleButton}
+        >
+          <Ionicons 
+            name={isMenuVisible ? "close" : "menu"} 
+            size={24} 
+            color="white" 
+          />
+        </TouchableOpacity>
+
+        {/* Left Side Floating Menu */}
+        <Animated.View style={[
+          styles.floatingMenu,
+          {
+            transform: [{
+              translateX: menuAnimatedValue.interpolate({
+                inputRange: [0, 1],
+                outputRange: [-200, 0]
+              })
+            }],
+            opacity: menuAnimatedValue
+          }
+        ]}>
+          <TouchableOpacity
+            onPress={() => {
+              toggleChat();
+              toggleMenu();
+            }}
+            style={styles.menuItem}
+          >
+            <Ionicons name="chatbubbles" size={20} color="white" />
+            <Text style={styles.menuItemText}>Chat</Text>
+            {messages.length > 0 && (
+              <View style={styles.menuBadge}>
+                <Text style={styles.menuBadgeText}>
+                  {messages.length > 99 ? '99+' : messages.length}
+                </Text>
+              </View>
+            )}
+          </TouchableOpacity>
+          
+          {/* Connection Status in Menu */}
+          <View style={styles.menuItem}>
             <View style={[
               styles.connectionDot, 
               { backgroundColor: isConnected ? '#34C759' : '#FF3B30' }
             ]} />
-            <Text style={styles.connectionText}>
-              {connectionStatus}
-            </Text>
+            <Text style={styles.menuItemText}>{connectionStatus}</Text>
           </View>
-        </View>
 
-        {/* Floating Chat Toggle Button */}
-        <TouchableOpacity
-          onPress={toggleChat}
-          style={styles.chatToggleButton}
-        >
-          <Ionicons 
-            name={isChatVisible ? "close" : "chatbubbles"} 
-            size={24} 
-            color="white" 
-          />
-          {messages.length > 0 && !isChatVisible && (
-            <View style={styles.messageBadge}>
-              <Text style={styles.messageBadgeText}>
-                {messages.length > 99 ? '99+' : messages.length}
-              </Text>
-            </View>
-          )}
-        </TouchableOpacity>
+          {/* Future menu items can be added here */}
+        </Animated.View>
 
         {/* Collapsible Chat Interface */}
         <Animated.View style={[
@@ -592,9 +630,14 @@ export default function ChatScreen() {
         ]}>
           <View style={styles.chatHeader}>
             <Text style={styles.chatTitle}>Conversation</Text>
-            <TouchableOpacity onPress={() => setMessages([])}>
-              <Ionicons name="trash-outline" size={20} color="#8E8E93" />
-            </TouchableOpacity>
+            <View style={styles.chatHeaderActions}>
+              <TouchableOpacity onPress={() => setMessages([])} style={styles.chatHeaderButton}>
+                <Ionicons name="trash-outline" size={20} color="#8E8E93" />
+              </TouchableOpacity>
+              <TouchableOpacity onPress={toggleChat} style={styles.chatHeaderButton}>
+                <Ionicons name="close" size={20} color="#8E8E93" />
+              </TouchableOpacity>
+            </View>
           </View>
           
           <FlatList
@@ -614,6 +657,15 @@ export default function ChatScreen() {
             )}
           />
         </Animated.View>
+
+        {/* Menu Overlay */}
+        {isMenuVisible && (
+          <TouchableOpacity
+            style={styles.menuOverlay}
+            onPress={toggleMenu}
+            activeOpacity={1}
+          />
+        )}
       </SafeAreaView>
     </>
   );
@@ -630,80 +682,59 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     paddingHorizontal: 40,
   },
-  brandContainer: {
-    alignItems: 'center',
-    marginBottom: 80,
-  },
-  brandText: {
-    fontSize: 42,
-    fontWeight: '200',
-    letterSpacing: 8,
-    color: '#FFFFFF',
-    marginBottom: 8,
-  },
-  brandSubtext: {
-    fontSize: 16,
-    color: '#8E8E93',
-    letterSpacing: 2,
-  },
   voiceButtonContainer: {
     alignItems: 'center',
     justifyContent: 'center',
     marginBottom: 40,
+    position: 'relative',
   },
   outerRing: {
     position: 'absolute',
-    width: 200,
-    height: 200,
-    borderRadius: 100,
+    width: 240,
+    height: 240,
+    borderRadius: 120,
     borderWidth: 2,
     borderColor: '#007AFF',
   },
-  innerRing: {
+  middleRing: {
     position: 'absolute',
-    width: 140,
-    height: 140,
-    borderRadius: 70,
+    width: 180,
+    height: 180,
+    borderRadius: 90,
     borderWidth: 3,
     borderColor: '#007AFF',
   },
-  voiceButton: {
-    width: 100,
-    height: 100,
-    borderRadius: 50,
+  innerRing: {
+    width: 120,
+    height: 120,
+    borderRadius: 60,
+    borderWidth: 4,
+    borderColor: '#007AFF',
     justifyContent: 'center',
     alignItems: 'center',
-    elevation: 8,
-    shadowColor: '#007AFF',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
-    shadowRadius: 8,
+  },
+  listeningIndicator: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  waveBar: {
+    width: 4,
+    height: 20,
+    marginHorizontal: 2,
+    borderRadius: 2,
+    backgroundColor: '#007AFF',
   },
   statusText: {
     fontSize: 18,
     color: '#FFFFFF',
-    marginBottom: 20,
     textAlign: 'center',
+    opacity: 0.8,
   },
-  connectionContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginTop: 20,
-  },
-  connectionDot: {
-    width: 8,
-    height: 8,
-    borderRadius: 4,
-    marginRight: 8,
-  },
-  connectionText: {
-    fontSize: 14,
-    color: '#8E8E93',
-  },
-  chatToggleButton: {
+  menuToggleButton: {
     position: 'absolute',
     top: 60,
-    right: 20,
+    left: 20,
     width: 50,
     height: 50,
     borderRadius: 25,
@@ -716,21 +747,59 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.3,
     shadowRadius: 4,
   },
-  messageBadge: {
+  floatingMenu: {
     position: 'absolute',
-    top: -5,
-    right: -5,
+    top: 120,
+    left: 20,
+    backgroundColor: '#1C1C1E',
+    borderRadius: 12,
+    padding: 16,
+    minWidth: 160,
+    elevation: 8,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+  },
+  menuOverlay: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundColor: 'rgba(0,0,0,0.3)',
+  },
+  menuItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 12,
+    paddingHorizontal: 8,
+    borderRadius: 8,
+  },
+  menuItemText: {
+    fontSize: 16,
+    color: '#FFFFFF',
+    marginLeft: 12,
+    flex: 1,
+  },
+  menuBadge: {
     backgroundColor: '#FF3B30',
     borderRadius: 10,
     minWidth: 20,
     height: 20,
     justifyContent: 'center',
     alignItems: 'center',
+    marginLeft: 8,
   },
-  messageBadgeText: {
+  menuBadgeText: {
     color: 'white',
     fontSize: 12,
     fontWeight: 'bold',
+  },
+  connectionDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
   },
   chatContainer: {
     position: 'absolute',
@@ -755,6 +824,14 @@ const styles = StyleSheet.create({
     fontSize: 18,
     fontWeight: '600',
     color: '#FFFFFF',
+  },
+  chatHeaderActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  chatHeaderButton: {
+    marginLeft: 16,
+    padding: 4,
   },
   messagesList: {
     flex: 1,

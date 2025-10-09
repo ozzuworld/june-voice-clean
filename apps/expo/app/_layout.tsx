@@ -1,27 +1,27 @@
-// app/_layout.tsx - Clean layout after removing unused voice hooks
+// ============================================================================
+// FILE 2: apps/expo/app/_layout.tsx
+// REPLACE ENTIRE FILE
+// ============================================================================
 import { Stack } from 'expo-router';
 import React from 'react';
 import { AuthProvider } from '@/hooks/useAuth';
-import { ChatProvider } from '@/hooks/useChat';
 
 export default function RootLayout() {
   console.log('🏗️ RootLayout rendering...');
   
   return (
     <AuthProvider>
-      <ChatProvider>
-        <Stack 
-          screenOptions={{ 
-            headerShown: false,
-            animation: 'none', // Prevent animation issues
-          }}
-        >
-          <Stack.Screen name="index" />
-          <Stack.Screen name="(auth)" />
-          <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
-          <Stack.Screen name="+not-found" />
-        </Stack>
-      </ChatProvider>
+      <Stack 
+        screenOptions={{ 
+          headerShown: false,
+          animation: 'none',
+        }}
+      >
+        <Stack.Screen name="index" />
+        <Stack.Screen name="(auth)" />
+        <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
+        <Stack.Screen name="+not-found" />
+      </Stack>
     </AuthProvider>
   );
 }

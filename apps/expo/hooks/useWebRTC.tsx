@@ -1,19 +1,18 @@
-// ============================================================================
-// FILE 1: apps/expo/hooks/useWebRTC.tsx
-// CREATE THIS NEW FILE
-// ============================================================================
 import { useState, useRef, useEffect, useCallback } from 'react';
 import { RTCPeerConnection, RTCSessionDescription, RTCIceCandidate, mediaDevices } from 'react-native-webrtc';
 import { useAuth } from './useAuth';
 
 interface WebRTCMessage {
-  type: 'offer' | 'answer' | 'ice-candidate' | 'connected' | 'transcript' | 'text_response' | 'error';
+  type: 'webrtc_offer' | 'webrtc_answer' | 'ice_candidate' | 'connected' | 'transcription_result' | 'text_response' | 'error' | 'audio_stream_start' | 'audio_stream_complete';
   sdp?: string;
   candidate?: any;
   text?: string;
   transcript?: string;
   session_id?: string;
   message?: string;
+  ice_servers?: any[];
+  features?: string[];
+  webrtc_enabled?: boolean;
 }
 
 interface Message {
@@ -90,32 +89,27 @@ export function useWebRTC() {
       case 'connected':
         console.log('✅ Session:', data.session_id);
         setSessionId(data.session_id || null);
+        // Use ICE servers from backend if provided
+        if (data.ice_servers) {
+          rtcConfig.iceServers = data.ice_servers;
+          console.log('🧊 Updated ICE servers from backend');
+        }
         break;
-        
-      // ✅ Use ICE servers from backend
-      if (data.ice_servers) {
-        rtcConfig.iceServers = data.ice_servers;
-      }
-      break;
 
-      case 'offer':
+      case 'webrtc_offer':
         await handleOffer(data.sdp!);
         break;
 
-      case 'answer':
-        await handleAnswer(data.sdp!);
-        break;
-
-      case 'ice-candidate':
+      case 'ice_candidate':
         await handleIceCandidate(data.candidate);
         break;
 
-      case 'transcript':
-        if (data.transcript) {
-          console.log('🎙️ Transcript:', data.transcript);
+      case 'transcription_result':
+        if (data.text) {
+          console.log('🎙️ Transcript:', data.text);
           setMessages(prev => [...prev, {
             id: `user-${Date.now()}`,
-            text: data.transcript!,
+            text: data.text!,
             isUser: true,
             timestamp: new Date(),
             isVoice: true,
@@ -138,6 +132,14 @@ export function useWebRTC() {
       case 'error':
         console.error('❌ Server error:', data.message);
         setError(data.message || 'Unknown error');
+        break;
+
+      case 'audio_stream_start':
+        console.log('🎵 Audio stream starting...');
+        break;
+
+      case 'audio_stream_complete':
+        console.log('🎵 Audio stream complete');
         break;
 
       default:
@@ -213,9 +215,9 @@ export function useWebRTC() {
       });
       await pc.setLocalDescription(offer);
 
-      console.log('📤 Sending offer');
+      console.log('📤 Sending WebRTC offer');
       wsRef.current?.send(JSON.stringify({
-        type: 'offer',
+        type: 'webrtc_offer',
         sdp: offer.sdp,
       }));
 
@@ -255,19 +257,11 @@ export function useWebRTC() {
     await pc.setLocalDescription(answer);
 
     wsRef.current?.send(JSON.stringify({
-      type: 'webrtc_offer',
+      type: 'webrtc_answer',
       sdp: answer.sdp,
     }));
 
-    console.log('📤 Sent answer');
-  };
-
-  const handleAnswer = async (sdp: string) => {
-    const pc = peerConnectionRef.current;
-    if (pc) {
-      await pc.setRemoteDescription(new RTCSessionDescription({ type: 'answer', sdp }));
-      console.log('✅ Set remote description');
-    }
+    console.log('📤 Sent WebRTC answer');
   };
 
   const handleIceCandidate = async (candidate: any) => {

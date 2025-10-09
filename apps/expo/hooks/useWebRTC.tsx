@@ -91,6 +91,12 @@ export function useWebRTC() {
         console.log('✅ Session:', data.session_id);
         setSessionId(data.session_id || null);
         break;
+        
+      // ✅ Use ICE servers from backend
+      if (data.ice_servers) {
+        rtcConfig.iceServers = data.ice_servers;
+      }
+      break;
 
       case 'offer':
         await handleOffer(data.sdp!);
@@ -151,7 +157,7 @@ export function useWebRTC() {
       if (event.candidate && wsRef.current?.readyState === WebSocket.OPEN) {
         console.log('🧊 Sending ICE candidate');
         wsRef.current.send(JSON.stringify({
-          type: 'ice-candidate',
+          type: 'ice_candidate',
           candidate: event.candidate.toJSON(),
         }));
       }
@@ -249,7 +255,7 @@ export function useWebRTC() {
     await pc.setLocalDescription(answer);
 
     wsRef.current?.send(JSON.stringify({
-      type: 'answer',
+      type: 'webrtc_offer',
       sdp: answer.sdp,
     }));
 

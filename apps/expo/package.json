@@ -1,6 +1,6 @@
 {
   "name": "@june/expo",
-  "main": "./App.tsx",
+  "main": "expo-router/entry",
   "version": "1.0.0",
   "scripts": {
     "start": "npx expo start",

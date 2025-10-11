@@ -36,11 +36,19 @@ export function useWebRTC() {
   const peerConnectionRef = useRef<RTCPeerConnection | null>(null);
   const localStreamRef = useRef<any>(null);
 
+  // Enhanced ICE configuration for internet connections
   const rtcConfig = {
     iceServers: [
       { urls: 'stun:stun.l.google.com:19302' },
       { urls: 'stun:stun1.l.google.com:19302' },
+      { urls: 'stun:stun2.l.google.com:19302' },
+      { urls: 'stun:stun3.l.google.com:19302' },
+      { urls: 'stun:stun.cloudflare.com:3478' },
     ],
+    // Add these ICE transport policies for better connectivity
+    iceTransportPolicy: 'all',
+    bundlePolicy: 'balanced',
+    rtcpMuxPolicy: 'require',
   };
 
   const connect = useCallback(() => {
@@ -97,7 +105,7 @@ export function useWebRTC() {
         // Use ICE servers from backend if provided
         if (data.ice_servers) {
           rtcConfig.iceServers = data.ice_servers;
-          console.log('🧊 Updated ICE servers from backend');
+          console.log('🧊 Updated ICE servers from backend:', data.ice_servers);
         }
         break;
 
@@ -180,18 +188,49 @@ export function useWebRTC() {
       return peerConnectionRef.current;
     }
 
-    console.log('🎬 Init peer connection');
+    console.log('🎬 Init peer connection with config:', rtcConfig);
     const pc = new RTCPeerConnection(rtcConfig);
 
-    // Enhanced ICE candidate handling
+    // Enhanced ICE candidate handling with detailed logging
     pc.onicecandidate = (event) => {
-      if (event.candidate && wsRef.current?.readyState === WebSocket.OPEN) {
-        console.log('🧊 Sending ICE candidate to backend');
-        wsRef.current.send(JSON.stringify({
-          type: 'ice_candidate',
-          candidate: event.candidate.toJSON(),
-        }));
+      if (event.candidate) {
+        const candidate = event.candidate;
+        
+        console.log('🧊 Frontend ICE Candidate Generated:', {
+          type: candidate.type,           // CRITICAL: should include 'srflx'
+          protocol: candidate.protocol,   
+          address: candidate.address,     // Should show public IP for 'srflx'
+          port: candidate.port,          
+          priority: candidate.priority,
+          sdpMLineIndex: candidate.sdpMLineIndex,
+          foundation: candidate.foundation,
+          full: candidate.candidate       // Full SDP line
+        });
+        
+        // Check if we're getting server reflexive candidates
+        if (candidate.type === 'srflx') {
+          console.log('✅ Got server reflexive candidate - public IP discovered!', candidate.address);
+        } else if (candidate.type === 'host') {
+          console.log('📱 Got host candidate - local IP', candidate.address);
+        } else if (candidate.type === 'relay') {
+          console.log('🔄 Got relay candidate - TURN server', candidate.address);
+        }
+        
+        if (wsRef.current?.readyState === WebSocket.OPEN) {
+          console.log('🧊 Sending ICE candidate to backend');
+          wsRef.current.send(JSON.stringify({
+            type: 'ice_candidate',
+            candidate: event.candidate.toJSON(),
+          }));
+        }
+      } else {
+        console.log('🏁 ICE gathering completed - no more candidates');
       }
+    };
+
+    // ICE gathering state monitoring
+    pc.onicegatheringstatechange = () => {
+      console.log('🧊 ICE Gathering State:', pc.iceGatheringState);
     };
 
     // ICE connection state monitoring
@@ -200,11 +239,21 @@ export function useWebRTC() {
       
       if (pc.iceConnectionState === 'connected' || pc.iceConnectionState === 'completed') {
         console.log('✅ ICE Connection established - audio should flow now');
-      } else if (pc.iceConnectionState === 'failed' || pc.iceConnectionState === 'disconnected') {
+        setError(null);
+      } else if (pc.iceConnectionState === 'failed') {
         console.error('❌ ICE Connection failed:', pc.iceConnectionState);
-        setError('Connection failed - please try again');
+        console.error('🔍 This usually means:');
+        console.error('  1. No server reflexive (srflx) candidates were generated');
+        console.error('  2. STUN servers are not accessible');
+        console.error('  3. Network firewall is blocking WebRTC traffic');
+        console.error('  4. NAT type is too restrictive (may need TURN server)');
+        setError('Connection failed - NAT traversal issue');
+      } else if (pc.iceConnectionState === 'disconnected') {
+        console.log('🔌 ICE Connection disconnected');
+        setError('Connection lost');
       } else if (pc.iceConnectionState === 'checking') {
         console.log('🔍 ICE Connection checking...');
+        setError(null);
       }
     };
 
@@ -280,6 +329,8 @@ export function useWebRTC() {
       await pc.setLocalDescription(offer);
 
       console.log('📤 Sending WebRTC offer');
+      console.log('🔍 ICE gathering will start now - watch for ICE candidates...');
+      
       wsRef.current?.send(JSON.stringify({
         type: 'webrtc_offer',
         sdp: offer.sdp,

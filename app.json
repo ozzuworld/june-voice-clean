@@ -1,0 +1,54 @@
+{
+  "expo": {
+    "name": "June Voice App",
+    "slug": "june-voice-app", 
+    "version": "1.0.0",
+    "orientation": "default",
+    "icon": "./assets/images/icon.png",
+    "scheme": "june",
+    "userInterfaceStyle": "automatic",
+    "newArchEnabled": true,
+    "splash": {
+      "image": "./assets/images/splash-icon.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#000000"
+    },
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.yourcompany.junevoice",
+      "infoPlist": {
+        "NSMicrophoneUsageDescription": "This app needs microphone access for real-time voice chat with AI.",
+        "NSCameraUsageDescription": "This app may need camera access for future video features.",
+        "CFBundleURLTypes": [
+          {
+            "CFBundleURLName": "com.yourcompany.junevoice",
+            "CFBundleURLSchemes": ["june"]
+          }
+        ]
+      }
+    },
+    "android": {
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/images/adaptive-icon.png",
+        "backgroundColor": "#000000"
+      },
+      "package": "com.kkazuma.junevoiceworkspace",
+      "permissions": [
+        "android.permission.RECORD_AUDIO",
+        "android.permission.MODIFY_AUDIO_SETTINGS",
+        "android.permission.INTERNET",
+        "android.permission.ACCESS_NETWORK_STATE",
+        "android.permission.CAMERA"
+      ]
+    },
+    "plugins": [
+      "expo-router",
+      "expo-secure-store"
+    ],
+    "extra": {
+      "eas": {
+        "projectId": "your-project-id-here"
+      }
+    }
+  }
+}

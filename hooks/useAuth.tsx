@@ -1,11 +1,13 @@
-// hooks/useAuth.tsx - ENHANCED DEBUG VERSION
+// hooks/useAuth.tsx - ENHANCED DEEP LINKING VERSION
 import React, { createContext, useContext, useEffect, useState, useRef, useMemo, useCallback } from 'react';
 import * as WebBrowser from 'expo-web-browser';
 import * as SecureStore from 'expo-secure-store';
+import * as Linking from 'expo-linking';
 import { makeRedirectUri, useAuthRequest, useAutoDiscovery } from 'expo-auth-session';
 import { decodeJWT } from '@/utils/jwt';
 import APP_CONFIG from '@/config/app.config';
 
+// CRITICAL: Complete auth session before component definition
 WebBrowser.maybeCompleteAuthSession();
 
 interface User {
@@ -29,6 +31,18 @@ interface AuthContextValue {
 
 const AuthContext = createContext<AuthContextValue | undefined>(undefined);
 
+// Deep link handler function
+const handleDeepLink = (url: string) => {
+  console.log('🔗 Deep link received:', url);
+  
+  // Check if this is an auth callback
+  if (url.includes('june://auth/callback')) {
+    console.log('✅ Auth callback detected');
+    // The expo-auth-session will handle this automatically
+    // but logging helps with debugging
+  }
+};
+
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   // Generate stable context ID
   const contextId = useRef(`ctx_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`).current;
@@ -50,15 +64,15 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   // Auto-discover Keycloak endpoints using config
   const discovery = useAutoDiscovery(discoveryUrl);
 
-  // 🐛 DEBUG: Create redirect URI with extensive logging
+  // 🐛 DEBUG: Create redirect URI with environment-specific handling
   const redirectUri = useMemo(() => {
-    const uri = makeRedirectUri({
-      scheme: APP_CONFIG.REDIRECT_SCHEME,
-      path: 'auth/callback',
-    });
+    const uri = __DEV__ 
+      ? makeRedirectUri({ path: 'auth/callback' })  // Expo Go development
+      : 'june://auth/callback';  // Standalone app production
     
     // 🔍 DETAILED DEBUG LOGGING
     console.log('🔍 [REDIRECT URI DEBUG] ==================')
+    console.log('🔍 Environment:', __DEV__ ? 'Development (Expo Go)' : 'Production (Standalone)');
     console.log('🔍 Scheme from config:', APP_CONFIG.REDIRECT_SCHEME);
     console.log('🔍 Path:', 'auth/callback');
     console.log('🔍 Generated URI:', uri);
@@ -88,16 +102,36 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   // 🐛 DEBUG: Log auth request details when ready
   useEffect(() => {
     if (request && discovery) {
-      console.log('🔍 [AUTH REQUEST DEBUG] ==================');
+      console.log('🔍 [AUTH REQUEST DEBUG] ==================')
       console.log('🔍 Client ID:', clientId);
       console.log('🔍 Redirect URI:', redirectUri);
       console.log('🔍 Discovery URL:', discoveryUrl);
       console.log('🔍 Auth Endpoint:', discovery.authorizationEndpoint);
       console.log('🔍 Token Endpoint:', discovery.tokenEndpoint);
       console.log('🔍 Request URL that will be opened:', request.url);
-      console.log('🔍 ========================================');
+      console.log('🔍 ========================================')
     }
   }, [request, discovery, clientId, redirectUri, discoveryUrl]);
+
+  // Add deep link listener
+  useEffect(() => {
+    console.log('🔗 Setting up deep link listeners...');
+    
+    const subscription = Linking.addEventListener('url', handleDeepLink);
+    
+    // Check if app was opened with a deep link
+    Linking.getInitialURL().then((url) => {
+      if (url) {
+        console.log('🔗 Initial URL detected:', url);
+        handleDeepLink(url);
+      }
+    });
+
+    return () => {
+      console.log('🔗 Cleaning up deep link listeners...');
+      subscription?.remove();
+    };
+  }, []);
 
   // Optimize logging for development only
   const logDebug = useCallback((message: string, data?: any) => {
@@ -132,11 +166,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         console.log('🔍 Error code:', response.params?.error);
         console.log('🔍 Error description:', response.params?.error_description);
       }
-      console.log('🔍 ========================================');
+      console.log('🔍 ========================================')
       
       logDebug('Auth response received', response.type);
       
       if (response.type === 'success') {
+        console.log('🎉 OAuth success! Exchanging code for token...');
         handleAuthSuccess(response.params.code);
       } else if (response.type === 'error') {
         logDebug('Auth error', response.params);
@@ -145,6 +180,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           isLoading: false,
         });
       } else if (response.type === 'cancel') {
+        console.log('🚫 User cancelled authentication');
         updateState({ 
           error: 'Authentication cancelled',
           isLoading: false,
@@ -210,7 +246,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       console.log('🔍 Discovery object:', discovery);
       console.log('🔍 Request object exists:', !!request);
       console.log('🔍 Redirect URI being used:', redirectUri);
-      console.log('🔍 ========================================');
+      console.log('🔍 ========================================')
       
       logDebug('Starting sign in...');
       
@@ -261,7 +297,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         url.searchParams.forEach((value, key) => {
           console.log(`🔍   ${key}: ${value}`);
         });
-        console.log('🔍 ========================================');
+        console.log('🔍 ========================================')
       }
       
       await promptAsync();
@@ -348,6 +384,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         isLoading: false,
       });
 
+      console.log('🎉 Authentication completed successfully!');
       logDebug('Authentication completed successfully!');
 
     } catch (error: any) {

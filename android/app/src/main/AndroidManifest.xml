@@ -1,9 +1,28 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+  <!-- Network permissions -->
   <uses-permission android:name="android.permission.INTERNET"/>
+  <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE"/>
+  
+  <!-- Audio/Microphone permissions - REQUIRED for WebRTC -->
+  <uses-permission android:name="android.permission.RECORD_AUDIO" />
+  <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS" />
+  <uses-permission android:name="android.permission.CAMERA" />
+  
+  <!-- Storage permissions -->
   <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE"/>
+  <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE"/>
+  
+  <!-- System permissions -->
   <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW"/>
   <uses-permission android:name="android.permission.VIBRATE"/>
-  <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE"/>
+  
+  <!-- Bluetooth permissions for audio routing (optional but recommended) -->
+  <uses-permission android:name="android.permission.BLUETOOTH" />
+  <uses-permission android:name="android.permission.BLUETOOTH_ADMIN" />
+  
+  <!-- Wake lock for keeping audio active -->
+  <uses-permission android:name="android.permission.WAKE_LOCK" />
+  
   <queries>
     <intent>
       <action android:name="android.intent.action.VIEW"/>
@@ -11,15 +30,34 @@
       <data android:scheme="https"/>
     </intent>
   </queries>
-  <application android:name=".MainApplication" android:label="@string/app_name" android:icon="@mipmap/ic_launcher" android:roundIcon="@mipmap/ic_launcher_round" android:allowBackup="true" android:theme="@style/AppTheme" android:supportsRtl="true">
+  
+  <application 
+    android:name=".MainApplication" 
+    android:label="@string/app_name" 
+    android:icon="@mipmap/ic_launcher" 
+    android:roundIcon="@mipmap/ic_launcher_round" 
+    android:allowBackup="true" 
+    android:theme="@style/AppTheme" 
+    android:supportsRtl="true"
+    android:usesCleartextTraffic="true">
+    
     <meta-data android:name="expo.modules.updates.ENABLED" android:value="false"/>
     <meta-data android:name="expo.modules.updates.EXPO_UPDATES_CHECK_ON_LAUNCH" android:value="ALWAYS"/>
     <meta-data android:name="expo.modules.updates.EXPO_UPDATES_LAUNCH_WAIT_MS" android:value="0"/>
-    <activity android:name=".MainActivity" android:configChanges="keyboard|keyboardHidden|orientation|screenSize|screenLayout|uiMode" android:launchMode="singleTask" android:windowSoftInputMode="adjustResize" android:theme="@style/Theme.App.SplashScreen" android:exported="true">
+    
+    <activity 
+      android:name=".MainActivity" 
+      android:configChanges="keyboard|keyboardHidden|orientation|screenSize|screenLayout|uiMode" 
+      android:launchMode="singleTask" 
+      android:windowSoftInputMode="adjustResize" 
+      android:theme="@style/Theme.App.SplashScreen" 
+      android:exported="true">
+      
       <intent-filter>
         <action android:name="android.intent.action.MAIN"/>
         <category android:name="android.intent.category.LAUNCHER"/>
       </intent-filter>
+      
       <!-- OAuth Deep Link Intent Filter for june://auth/callback -->
       <intent-filter>
         <action android:name="android.intent.action.VIEW"/>
@@ -27,6 +65,7 @@
         <category android:name="android.intent.category.BROWSABLE"/>
         <data android:scheme="june" android:host="auth" android:path="/callback"/>
       </intent-filter>
+      
       <!-- Fallback Intent Filter for june:// scheme (for any june:// URLs) -->
       <intent-filter>
         <action android:name="android.intent.action.VIEW"/>
@@ -34,6 +73,8 @@
         <category android:name="android.intent.category.BROWSABLE"/>
         <data android:scheme="june"/>
       </intent-filter>
+      
     </activity>
+    
   </application>
 </manifest>

@@ -1,4 +1,4 @@
-// hooks/useAuth.tsx - ENHANCED DEEP LINKING VERSION
+// hooks/useAuth.tsx - ENHANCED DEEP LINKING VERSION WITH ANDROID FIX
 import React, { createContext, useContext, useEffect, useState, useRef, useMemo, useCallback } from 'react';
 import * as WebBrowser from 'expo-web-browser';
 import * as SecureStore from 'expo-secure-store';
@@ -64,10 +64,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   // Auto-discover Keycloak endpoints using config
   const discovery = useAutoDiscovery(discoveryUrl);
 
-  // 🐛 DEBUG: Create redirect URI with environment-specific handling
+  // 🔧 ANDROID FIX: Create redirect URI with proper scheme format
   const redirectUri = useMemo(() => {
     const uri = __DEV__ 
-      ? makeRedirectUri({ path: 'auth/callback' })  // Expo Go development
+      ? makeRedirectUri({ 
+          native: 'june:', // 🔧 CRITICAL: Use colon only, no slashes for Android compatibility
+          path: 'auth/callback' 
+        })
       : 'june://auth/callback';  // Standalone app production
     
     // 🔍 DETAILED DEBUG LOGGING
@@ -77,7 +80,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     console.log('🔍 Path:', 'auth/callback');
     console.log('🔍 Generated URI:', uri);
     console.log('🔍 makeRedirectUri options:', {
-      scheme: APP_CONFIG.REDIRECT_SCHEME,
+      native: 'june:',
       path: 'auth/callback',
     });
     console.log('🔍 ========================================')
@@ -183,6 +186,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         console.log('🚫 User cancelled authentication');
         updateState({ 
           error: 'Authentication cancelled',
+          isLoading: false,
+        });
+      } else if (response.type === 'dismiss') {
+        // 🔧 ANDROID FIX: Handle dismiss response for Android browser issues
+        console.log('🚫 Browser dismissed - Android redirect issue detected');
+        updateState({ 
+          error: 'Authentication window closed unexpectedly. This may be due to Android browser settings. Please try again.',
           isLoading: false,
         });
       }

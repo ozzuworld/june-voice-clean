@@ -23,9 +23,9 @@ export interface WebRTCConfig {
 export const webrtcConfig: WebRTCConfig = {
   // Janus Gateway endpoints (your main platform)
   janus: {
-    ws_url: "wss://ozzu.world/janus-ws",      // Primary WebSocket connection
-    http_url: "https://ozzu.world/janus",     // Fallback HTTP API
-    admin_url: "https://ozzu.world/janus-admin" // Admin endpoint if needed
+    ws_url: "wss://janus.ozzu.world/janus-ws",      // Primary WebSocket connection
+    http_url: "https://janus.ozzu.world/janus",     // Fallback HTTP API
+    admin_url: "https://janus.ozzu.world/janus-admin" // Admin endpoint if needed
   },
   
   // Your STUNner STUN/TURN servers from Kubernetes deployment

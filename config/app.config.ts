@@ -9,8 +9,8 @@ const APP_CONFIG = {
     CLIENT_ID: 'june-mobile-app',
   },
   
-  // ✅ Make sure this matches your scheme in app.json
-  REDIRECT_SCHEME: 'june',
+  // ✅ Updated: Use full URI format to fix redirect URI matching in Keycloak
+  REDIRECT_SCHEME: 'june://auth/callback',
 
   // Add development configuration
   DEVELOPMENT: {

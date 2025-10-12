@@ -58,10 +58,11 @@ export function useWebRTC() {
       return;
     }
 
-    const wsUrl = `wss://api.ozzu.world/ws?token=Bearer%20${accessToken}`;
+    // ✅ FIXED: Connect to Janus WebSocket endpoint (no auth needed)
+    const wsUrl = `wss://janus.ozzu.world/janus-ws`;
     console.log('🔌 Connecting WebSocket...');
 
-    wsRef.current = new WebSocket(wsUrl);
+    wsRef.current = new WebSocket(wsUrl, 'janus-protocol');
 
     wsRef.current.onopen = () => {
       console.log('✅ WebSocket connected');

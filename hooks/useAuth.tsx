@@ -1,4 +1,4 @@
-// hooks/useAuth.tsx - ENHANCED DEEP LINKING VERSION WITH ANDROID FIX
+// hooks/useAuth.tsx - ENHANCED DEEP LINKING VERSION WITH COMPREHENSIVE DEBUGGING
 import React, { createContext, useContext, useEffect, useState, useRef, useMemo, useCallback } from 'react';
 import * as WebBrowser from 'expo-web-browser';
 import * as SecureStore from 'expo-secure-store';
@@ -31,16 +31,32 @@ interface AuthContextValue {
 
 const AuthContext = createContext<AuthContextValue | undefined>(undefined);
 
-// Deep link handler function
+// 🔍 ENHANCED: Deep link handler function with comprehensive debugging
 const handleDeepLink = (url: string) => {
+  console.log('🔗 [DEEP LINK DEBUG] ==================');
   console.log('🔗 Deep link received:', url);
+  console.log('🔗 Timestamp:', new Date().toISOString());
+  console.log('🔗 URL breakdown:');
   
-  // Check if this is an auth callback
-  if (url.includes('june://auth/callback')) {
-    console.log('✅ Auth callback detected');
-    // The expo-auth-session will handle this automatically
-    // but logging helps with debugging
+  try {
+    const parsedUrl = new URL(url);
+    console.log('🔗   Protocol:', parsedUrl.protocol);
+    console.log('🔗   Host:', parsedUrl.host);
+    console.log('🔗   Pathname:', parsedUrl.pathname);
+    console.log('🔗   Search params:', parsedUrl.search);
+    
+    // Check if this is an auth callback
+    if (url.includes('june://auth/callback') || url.includes('june:') && url.includes('code=')) {
+      console.log('✅ OAuth callback detected!');
+      console.log('🔗 This should trigger the auth response handler...');
+    } else {
+      console.log('ℹ️ Non-OAuth deep link');
+    }
+  } catch (error) {
+    console.log('🔗 Error parsing URL:', error);
   }
+  
+  console.log('🔗 ======================================');
 };
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
@@ -115,25 +131,33 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   }, [request, discovery, clientId, redirectUri, discoveryUrl]);
 
-  // Add deep link listener
+  // 🔍 ENHANCED: Deep link listener with comprehensive debugging
   useEffect(() => {
-    console.log('🔗 Setting up deep link listeners...');
+    console.log('🔗 [DEEP LINK SETUP] Setting up listeners...');
+    console.log('🔗 Context ID:', contextId);
     
-    const subscription = Linking.addEventListener('url', handleDeepLink);
+    const subscription = Linking.addEventListener('url', (event) => {
+      console.log('🔗 [DEEP LINK EVENT] Received URL event:', event);
+      handleDeepLink(event.url);
+    });
     
     // Check if app was opened with a deep link
     Linking.getInitialURL().then((url) => {
       if (url) {
-        console.log('🔗 Initial URL detected:', url);
+        console.log('🔗 [INITIAL URL] App opened with URL:', url);
         handleDeepLink(url);
+      } else {
+        console.log('🔗 [INITIAL URL] No initial URL detected');
       }
+    }).catch((error) => {
+      console.log('🔗 [INITIAL URL ERROR]:', error);
     });
 
     return () => {
-      console.log('🔗 Cleaning up deep link listeners...');
+      console.log('🔗 [DEEP LINK CLEANUP] Removing listeners...');
       subscription?.remove();
     };
-  }, []);
+  }, [contextId]);
 
   // Optimize logging for development only
   const logDebug = useCallback((message: string, data?: any) => {
@@ -142,10 +166,30 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   }, [contextId]);
 
-  // Memoized state update to prevent unnecessary re-renders
+  // 🔍 ENHANCED: Memoized state update with detailed logging
   const updateState = useCallback((updates: Partial<typeof state>) => {
     setState(prev => {
       const newState = { ...prev, ...updates };
+      
+      // 🔍 DETAILED STATE CHANGE LOGGING
+      console.log('🔄 [STATE UPDATE DEBUG] ================');
+      console.log('🔄 Previous state:', {
+        isAuthenticated: prev.isAuthenticated,
+        isLoading: prev.isLoading,
+        hasToken: !!prev.accessToken,
+        hasUser: !!prev.user,
+        error: prev.error
+      });
+      console.log('🔄 Updates applied:', updates);
+      console.log('🔄 New state:', {
+        isAuthenticated: newState.isAuthenticated,
+        isLoading: newState.isLoading,
+        hasToken: !!newState.accessToken,
+        hasUser: !!newState.user,
+        error: newState.error
+      });
+      console.log('🔄 ======================================');
+      
       logDebug('State update', { from: prev, to: newState });
       return newState;
     });
@@ -156,68 +200,76 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     loadStoredAuth();
   }, []);
 
-  // Handle auth response with enhanced debugging
+  // 🔍 ENHANCED: Handle auth response with comprehensive debugging
   useEffect(() => {
     if (response) {
       console.log('🔍 [AUTH RESPONSE DEBUG] ==================')
       console.log('🔍 Response type:', response.type);
-      console.log('🔍 Full response:', response);
+      console.log('🔍 Response received at:', new Date().toISOString());
+      console.log('🔍 Full response object:', response);
       
       if (response.type === 'error') {
         console.log('🔍 Error details:', response.params);
         console.log('🔍 Error code:', response.params?.error);
         console.log('🔍 Error description:', response.params?.error_description);
+      } else if (response.type === 'success') {
+        console.log('🔍 Success params:', response.params);
+        console.log('🔍 Authorization code received:', response.params?.code ? 'YES' : 'NO');
+        console.log('🔍 State parameter:', response.params?.state);
       }
       console.log('🔍 ========================================')
       
       logDebug('Auth response received', response.type);
       
       if (response.type === 'success') {
-        console.log('🎉 OAuth success! Exchanging code for token...');
+        console.log('🎉 [SUCCESS] OAuth success! Proceeding to token exchange...');
         handleAuthSuccess(response.params.code);
       } else if (response.type === 'error') {
+        console.log('❌ [ERROR] Auth error received');
         logDebug('Auth error', response.params);
         updateState({
           error: response.params.error_description || response.params.error || 'Authentication failed',
           isLoading: false,
         });
       } else if (response.type === 'cancel') {
-        console.log('🚫 User cancelled authentication');
+        console.log('🚫 [CANCEL] User cancelled authentication');
         updateState({ 
           error: 'Authentication cancelled',
           isLoading: false,
         });
       } else if (response.type === 'dismiss') {
-        // 🔧 ANDROID FIX: Handle dismiss response for Android browser issues
-        console.log('🚫 Browser dismissed - Android redirect issue detected');
+        console.log('🚫 [DISMISS] Browser dismissed - Android redirect issue detected');
         updateState({ 
           error: 'Authentication window closed unexpectedly. This may be due to Android browser settings. Please try again.',
           isLoading: false,
         });
+      } else {
+        console.log('❓ [UNKNOWN] Unknown response type:', response.type);
       }
     }
   }, [response, updateState, logDebug]);
 
   const loadStoredAuth = async () => {
     try {
-      logDebug('Loading stored auth...');
+      console.log('💾 [STORAGE] Loading stored auth...');
       
       const token = await SecureStore.getItemAsync('accessToken');
       const userData = await SecureStore.getItemAsync('userData');
       
       if (token && userData) {
+        console.log('💾 [STORAGE] Found stored credentials');
         const user = JSON.parse(userData);
         
         // Validate token
         const payload = decodeJWT(token);
         if (!payload || !payload.exp || payload.exp * 1000 < Date.now()) {
-          logDebug('Stored token expired, clearing...');
+          console.log('💾 [STORAGE] Stored token expired, clearing...');
           await clearStoredAuth();
           updateState({ isLoading: false });
           return;
         }
         
-        logDebug('Valid stored auth found', { email: user.email });
+        console.log('💾 [STORAGE] Valid stored auth found:', { email: user.email });
         updateState({
           accessToken: token,
           isAuthenticated: true,
@@ -225,11 +277,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           isLoading: false,
         });
       } else {
-        logDebug('No stored auth found');
+        console.log('💾 [STORAGE] No stored auth found');
         updateState({ isLoading: false });
       }
     } catch (error) {
-      logDebug('Failed to load stored auth', error);
+      console.log('💾 [STORAGE ERROR] Failed to load stored auth:', error);
       await clearStoredAuth();
       updateState({ isLoading: false });
     }
@@ -241,9 +293,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         SecureStore.deleteItemAsync('accessToken'),
         SecureStore.deleteItemAsync('userData')
       ]);
-      logDebug('Stored auth cleared');
+      console.log('💾 [STORAGE] Stored auth cleared');
     } catch (error) {
-      logDebug('Error clearing stored auth', error);
+      console.log('💾 [STORAGE ERROR] Error clearing stored auth:', error);
     }
   };
 
@@ -309,10 +361,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         console.log('🔍 ========================================')
       }
       
-      await promptAsync();
+      console.log('🚀 [BROWSER] About to call promptAsync()...');
+      const result = await promptAsync();
+      console.log('🚀 [BROWSER] promptAsync() completed with result:', result);
       
     } catch (error: any) {
-      console.log('🔍 Sign in error:', error);
+      console.log('🔍 [SIGN IN ERROR]:', error);
       logDebug('Sign in error', error);
       updateState({ 
         error: error.message || 'Sign in failed',
@@ -323,12 +377,15 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const handleAuthSuccess = async (code: string) => {
     try {
-      logDebug('Exchanging code for token...');
+      console.log('🔄 [TOKEN EXCHANGE] Starting token exchange...');
+      console.log('🔄 Authorization code received:', code ? 'YES (length: ' + code.length + ')' : 'NO');
       
       updateState({ isLoading: true, error: null });
       
       if (!discovery?.tokenEndpoint || !request?.codeVerifier) {
-        throw new Error('Authentication configuration not ready');
+        const error = !discovery?.tokenEndpoint ? 'Token endpoint not available' : 'Code verifier not available';
+        console.log('🔄 [TOKEN EXCHANGE ERROR]:', error);
+        throw new Error('Authentication configuration not ready: ' + error);
       }
 
       const tokenRequest = {
@@ -339,12 +396,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         code_verifier: request.codeVerifier,
       };
 
-      console.log('🔍 [TOKEN EXCHANGE DEBUG] =================');
-      console.log('🔍 Token endpoint:', discovery.tokenEndpoint);
-      console.log('🔍 Token request params:', tokenRequest);
-      console.log('🔍 =========================================')
-
-      logDebug('Making token request to', discovery.tokenEndpoint);
+      console.log('🔄 [TOKEN EXCHANGE DEBUG] =================');
+      console.log('🔄 Token endpoint:', discovery.tokenEndpoint);
+      console.log('🔄 Token request params:', {
+        ...tokenRequest,
+        code: code ? `${code.substring(0, 10)}...` : 'missing',
+        code_verifier: request.codeVerifier ? `${request.codeVerifier.substring(0, 10)}...` : 'missing'
+      });
+      console.log('🔄 Making token request...');
 
       const response = await fetch(discovery.tokenEndpoint, {
         method: 'POST',
@@ -354,19 +413,26 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         body: new URLSearchParams(tokenRequest).toString(),
       });
 
+      console.log('🔄 Token response status:', response.status);
+      console.log('🔄 Token response headers:', Object.fromEntries(response.headers.entries()));
+
       if (!response.ok) {
         const errorText = await response.text();
-        console.log('🔍 Token exchange failed:', { status: response.status, error: errorText });
-        logDebug('Token exchange failed', { status: response.status, error: errorText });
-        throw new Error(`Token exchange failed: ${response.status}`);
+        console.log('🔄 [TOKEN EXCHANGE FAILED]:', { status: response.status, error: errorText });
+        throw new Error(`Token exchange failed: ${response.status} - ${errorText}`);
       }
 
       const tokens = await response.json();
-      logDebug('Token exchange successful');
+      console.log('🔄 [TOKEN EXCHANGE SUCCESS] Received tokens:', {
+        access_token: tokens.access_token ? 'present' : 'missing',
+        token_type: tokens.token_type,
+        expires_in: tokens.expires_in
+      });
 
       // Decode JWT to get user info
       const payload = decodeJWT(tokens.access_token);
       if (!payload) {
+        console.log('🔄 [JWT ERROR] Failed to decode access token');
         throw new Error('Failed to decode access token');
       }
 
@@ -377,14 +443,21 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         username: payload.preferred_username,
       };
 
-      logDebug('User authenticated', { email: user.email });
+      console.log('👤 [USER INFO] User authenticated:', { 
+        id: user.id, 
+        email: user.email, 
+        username: user.username 
+      });
 
       // Store securely
+      console.log('💾 [STORAGE] Storing tokens and user data...');
       await Promise.all([
         SecureStore.setItemAsync('accessToken', tokens.access_token),
         SecureStore.setItemAsync('userData', JSON.stringify(user))
       ]);
+      console.log('💾 [STORAGE] Storage completed successfully');
 
+      console.log('🎯 [FINAL STATE UPDATE] Setting authenticated state...');
       updateState({
         accessToken: tokens.access_token,
         isAuthenticated: true,
@@ -393,12 +466,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         isLoading: false,
       });
 
-      console.log('🎉 Authentication completed successfully!');
-      logDebug('Authentication completed successfully!');
+      console.log('🎉 [COMPLETE] Authentication completed successfully!');
 
     } catch (error: any) {
-      console.log('🔍 Token exchange error:', error);
-      logDebug('Token exchange error', error);
+      console.log('❌ [TOKEN EXCHANGE ERROR]:', error);
+      console.log('❌ Error details:', {
+        message: error.message,
+        stack: error.stack
+      });
       updateState({ 
         error: error.message || 'Failed to complete authentication',
         isLoading: false,
@@ -408,7 +483,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const signOut = useCallback(async () => {
     try {
-      logDebug('Signing out...');
+      console.log('🚪 [SIGN OUT] Starting sign out process...');
       
       await clearStoredAuth();
       
@@ -420,11 +495,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         error: null,
       });
 
-      logDebug('Signed out successfully');
+      console.log('🚪 [SIGN OUT] Signed out successfully');
     } catch (error) {
-      logDebug('Sign out error', error);
+      console.log('🚪 [SIGN OUT ERROR]:', error);
     }
-  }, [updateState, logDebug]);
+  }, [updateState]);
 
   const clearError = useCallback(() => {
     updateState({ error: null });

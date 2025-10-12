@@ -64,24 +64,23 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   // Auto-discover Keycloak endpoints using config
   const discovery = useAutoDiscovery(discoveryUrl);
 
-  // 🔧 ANDROID FIX: Create redirect URI with proper scheme format
+  // 🔧 UPDATED: Use the REDIRECT_SCHEME from config directly
   const redirectUri = useMemo(() => {
     const uri = __DEV__ 
       ? makeRedirectUri({ 
-          native: 'june:', // 🔧 CRITICAL: Use colon only, no slashes for Android compatibility
-          path: 'auth/callback' 
+          native: APP_CONFIG.REDIRECT_SCHEME, // Use full URI from config
+          path: undefined // Remove path since it's included in REDIRECT_SCHEME
         })
-      : 'june://auth/callback';  // Standalone app production
+      : APP_CONFIG.REDIRECT_SCHEME;  // Use config value for production
     
     // 🔍 DETAILED DEBUG LOGGING
     console.log('🔍 [REDIRECT URI DEBUG] ==================')
     console.log('🔍 Environment:', __DEV__ ? 'Development (Expo Go)' : 'Production (Standalone)');
-    console.log('🔍 Scheme from config:', APP_CONFIG.REDIRECT_SCHEME);
-    console.log('🔍 Path:', 'auth/callback');
+    console.log('🔍 Config REDIRECT_SCHEME:', APP_CONFIG.REDIRECT_SCHEME);
     console.log('🔍 Generated URI:', uri);
     console.log('🔍 makeRedirectUri options:', {
-      native: 'june:',
-      path: 'auth/callback',
+      native: APP_CONFIG.REDIRECT_SCHEME,
+      path: undefined,
     });
     console.log('🔍 ========================================')
     
@@ -343,7 +342,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       console.log('🔍 [TOKEN EXCHANGE DEBUG] =================');
       console.log('🔍 Token endpoint:', discovery.tokenEndpoint);
       console.log('🔍 Token request params:', tokenRequest);
-      console.log('🔍 =========================================');
+      console.log('🔍 =========================================')
 
       logDebug('Making token request to', discovery.tokenEndpoint);
 

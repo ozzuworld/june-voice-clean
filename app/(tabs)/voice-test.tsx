@@ -16,6 +16,7 @@ import {
   SafeAreaView
 } from 'react-native';
 import { useJanusWebRTC } from '../../hooks/useJanusWebRTC';
+import { requestMicrophonePermission, checkMicrophonePermission, showPermissionDeniedAlert } from '../../utils/permissions';
 
 export default function VoiceTestScreen() {
   const {
@@ -46,9 +47,44 @@ export default function VoiceTestScreen() {
       Alert.alert('Call Ended', 'Voice call has ended.');
     },
     onError: (error) => {
-      Alert.alert('WebRTC Error', error);
+      console.error('WebRTC Error:', error);
+      if (error.includes('permission') || error.includes('Permission')) {
+        showPermissionDeniedAlert();
+      } else {
+        Alert.alert('WebRTC Error', error);
+      }
     }
   });
+  
+  /**
+   * Check microphone permissions before starting call
+   */
+  const checkPermissionsAndStartCall = async () => {
+    try {
+      console.log('🔍 Checking microphone permissions...');
+      
+      const hasPermission = await checkMicrophonePermission();
+      if (!hasPermission) {
+        console.log('❌ No microphone permission, requesting...');
+        const granted = await requestMicrophonePermission();
+        if (!granted) {
+          showPermissionDeniedAlert();
+          return;
+        }
+      }
+      
+      console.log('✅ Microphone permission granted, starting call...');
+      startCall();
+      
+    } catch (error) {
+      console.error('❌ Permission check failed:', error);
+      Alert.alert(
+        'Permission Error',
+        'Failed to check microphone permissions. Please try again.',
+        [{ text: 'OK' }]
+      );
+    }
+  };
   
   const getConnectionStatusColor = () => {
     if (isConnected) return '#4CAF50';
@@ -163,7 +199,7 @@ export default function VoiceTestScreen() {
                 styles.callButton,
                 (!isConnected || isCallStarting || isInCall) && styles.buttonDisabled
               ]}
-              onPress={startCall}
+              onPress={checkPermissionsAndStartCall}
               disabled={!isConnected || isCallStarting || isInCall}
             >
               <Text style={styles.buttonText}>
@@ -195,14 +231,30 @@ export default function VoiceTestScreen() {
             2. Once connected, tap "Start Voice Call" to begin audio session
           </Text>
           <Text style={styles.instructionText}>
-            3. Grant microphone permissions when prompted
+            3. The app will automatically request microphone permissions
           </Text>
           <Text style={styles.instructionText}>
-            4. Test voice communication with other connected clients
+            4. Grant microphone access when prompted by the system
           </Text>
           <Text style={styles.instructionText}>
-            5. Tap "End Call" to stop the audio session
+            5. Test voice communication with other connected clients
           </Text>
+          <Text style={styles.instructionText}>
+            6. Tap "End Call" to stop the audio session
+          </Text>
+          
+          <View style={styles.troubleshootingSection}>
+            <Text style={styles.troubleshootingTitle}>Troubleshooting:</Text>
+            <Text style={styles.troubleshootingText}>
+              • If you see "Permission denied" errors, make sure to allow microphone access in your device settings
+            </Text>
+            <Text style={styles.troubleshootingText}>
+              • On Android, you may see a permission dialog - tap "Allow"
+            </Text>
+            <Text style={styles.troubleshootingText}>
+              • On iOS, check Settings → Privacy → Microphone → June Voice App
+            </Text>
+          </View>
         </View>
       </ScrollView>
     </SafeAreaView>
@@ -330,5 +382,23 @@ const styles = StyleSheet.create({
     color: '#666',
     marginBottom: 8,
     lineHeight: 20,
+  },
+  troubleshootingSection: {
+    marginTop: 15,
+    padding: 10,
+    backgroundColor: '#F3F4F6',
+    borderRadius: 6,
+  },
+  troubleshootingTitle: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#374151',
+    marginBottom: 8,
+  },
+  troubleshootingText: {
+    fontSize: 13,
+    color: '#6B7280',
+    marginBottom: 4,
+    lineHeight: 18,
   },
 });

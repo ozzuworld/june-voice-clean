@@ -13,6 +13,7 @@ import {
   MediaStream
 } from 'react-native-webrtc';
 import { getWebRTCConfig, WebRTCConfig } from '../config/webrtc';
+import { requestMicrophonePermission } from '../utils/permissions';
 
 export interface JanusMessage {
   janus: string;
@@ -64,7 +65,7 @@ export class JanusWebRTCService {
         }
 
         this.ws.onopen = () => {
-          console.log('Connected to Janus Gateway');
+          console.log('✅ WebSocket connected');
           this.isConnected = true;
           this.callbacks.onConnected?.();
           this.createSession().then(() => resolve(true)).catch(reject);
@@ -80,13 +81,13 @@ export class JanusWebRTCService {
         };
         
         this.ws.onerror = (error) => {
-          console.error('Janus WebSocket error:', error);
+          console.error('❌ Janus WebSocket error:', error);
           this.callbacks.onError?.('WebSocket connection failed');
           reject(error);
         };
         
         this.ws.onclose = () => {
-          console.log('Janus WebSocket closed');
+          console.log('🔴 Janus WebSocket closed');
           this.isConnected = false;
           this.callbacks.onDisconnected?.();
         };
@@ -139,6 +140,8 @@ export class JanusWebRTCService {
         throw new Error('Not connected to Janus');
       }
 
+      console.log('🎤 Starting streaming...');
+      
       // Get microphone permission and stream
       await this.initializeLocalStream();
       
@@ -152,8 +155,20 @@ export class JanusWebRTCService {
       return true;
       
     } catch (error) {
-      console.error('Failed to start voice call:', error);
-      this.callbacks.onError?.('Failed to start call');
+      console.error('❌ Start error:', error);
+      let errorMessage = 'Failed to start call';
+      
+      if (error instanceof Error) {
+        if (error.name === 'SecurityError' || error.name === 'NotAllowedError') {
+          errorMessage = 'Microphone permission denied. Please grant microphone permission in your device settings.';
+        } else if (error.message.includes('permission')) {
+          errorMessage = error.message;
+        } else {
+          errorMessage = error.message;
+        }
+      }
+      
+      this.callbacks.onError?.(errorMessage);
       return false;
     }
   }
@@ -176,10 +191,20 @@ export class JanusWebRTCService {
   }
 
   /**
-   * Get microphone stream
+   * Get microphone stream with permission handling
    */
   private async initializeLocalStream(): Promise<void> {
     try {
+      console.log('🔍 Checking microphone permissions...');
+      
+      // Request permission first
+      const hasPermission = await requestMicrophonePermission();
+      if (!hasPermission) {
+        throw new Error('Microphone permission denied by user. Please grant microphone permission in your device settings.');
+      }
+
+      console.log('✅ Microphone permission granted, getting media stream...');
+      
       const stream = await mediaDevices.getUserMedia({
         audio: {
           echoCancellation: true,
@@ -191,11 +216,25 @@ export class JanusWebRTCService {
       
       this.localStream = stream;
       this.callbacks.onLocalStream?.(stream);
-      console.log('Local audio stream initialized');
+      console.log('✅ Local audio stream initialized');
       
     } catch (error) {
-      console.error('Failed to get microphone access:', error);
-      throw new Error('Microphone access denied');
+      console.error('❌ Failed to get microphone access:', error);
+      
+      if (error instanceof Error) {
+        // Handle different types of permission errors
+        if (error.name === 'SecurityError' || error.name === 'NotAllowedError') {
+          throw new Error('Permission denied.');
+        } else if (error.name === 'NotFoundError') {
+          throw new Error('No microphone device found.');
+        } else if (error.name === 'NotReadableError') {
+          throw new Error('Microphone is already in use by another application.');
+        } else if (error.message.includes('permission')) {
+          throw error; // Re-throw permission-related errors as-is
+        }
+      }
+      
+      throw new Error('Microphone access failed');
     }
   }
 
@@ -223,7 +262,7 @@ export class JanusWebRTCService {
 
     // Handle remote stream
     this.pc.ontrack = (event) => {
-      console.log('Received remote stream');
+      console.log('🔊 Received remote stream');
       if (event.streams && event.streams[0]) {
         this.callbacks.onRemoteStream?.(event.streams[0]);
       }
@@ -231,7 +270,7 @@ export class JanusWebRTCService {
 
     // Handle connection state changes
     this.pc.onconnectionstatechange = () => {
-      console.log('WebRTC connection state:', this.pc?.connectionState);
+      console.log('📡 WebRTC connection state:', this.pc?.connectionState);
       if (this.pc?.connectionState === 'failed') {
         this.callbacks.onError?.('WebRTC connection failed');
       }
@@ -295,30 +334,30 @@ export class JanusWebRTCService {
    * Handle messages from Janus
    */
   private handleJanusMessage(message: JanusMessage): void {
-    console.log('Received Janus message:', message.janus);
+    console.log('📨 Received Janus message:', message.janus);
     
     switch (message.janus) {
       case 'success':
         if (message.data?.id && !this.sessionId) {
           this.sessionId = message.data.id;
-          console.log('Janus session created:', this.sessionId);
+          console.log('🟢 Janus session created:', this.sessionId);
         } else if (message.data?.id && this.sessionId && !this.handleId) {
           this.handleId = message.data.id;
-          console.log('Janus handle attached:', this.handleId);
+          console.log('🔌 Janus handle attached:', this.handleId);
         }
         break;
         
       case 'webrtcup':
-        console.log('WebRTC connection established');
+        console.log('📡 WebRTC connection established');
         break;
         
       case 'hangup':
-        console.log('Call ended by remote');
+        console.log('📞 Call ended by remote');
         this.endCall();
         break;
         
       case 'error':
-        console.error('Janus error:', message.error);
+        console.error('❌ Janus error:', message.error);
         this.callbacks.onError?.(message.error?.reason || 'Unknown error');
         break;
     }

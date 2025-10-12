@@ -20,11 +20,19 @@
         <action android:name="android.intent.action.MAIN"/>
         <category android:name="android.intent.category.LAUNCHER"/>
       </intent-filter>
+      <!-- OAuth Deep Link Intent Filter for june://auth/callback -->
       <intent-filter>
         <action android:name="android.intent.action.VIEW"/>
         <category android:name="android.intent.category.DEFAULT"/>
         <category android:name="android.intent.category.BROWSABLE"/>
-        <data android:scheme="com.kkazuma.junevoiceworkspace"/>
+        <data android:scheme="june" android:host="auth" android:path="/callback"/>
+      </intent-filter>
+      <!-- Fallback Intent Filter for june:// scheme (for any june:// URLs) -->
+      <intent-filter>
+        <action android:name="android.intent.action.VIEW"/>
+        <category android:name="android.intent.category.DEFAULT"/>
+        <category android:name="android.intent.category.BROWSABLE"/>
+        <data android:scheme="june"/>
       </intent-filter>
     </activity>
   </application>

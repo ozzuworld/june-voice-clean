@@ -23,30 +23,76 @@ export interface JWTPayload {
  * @returns Decoded payload object
  */
 export function decodeJWT(token: string): JWTPayload | null {
+  console.log('🔐 [JWT DECODE] Starting JWT decode process...');
+  
   if (!token || typeof token !== 'string') {
+    console.log('🔐 [JWT DECODE ERROR] Invalid token input:', { 
+      exists: !!token, 
+      type: typeof token, 
+      length: token?.length 
+    });
     return null;
   }
 
   try {
+    console.log('🔐 [JWT DECODE] Token length:', token.length);
+    console.log('🔐 [JWT DECODE] Token preview:', `${token.substring(0, 50)}...`);
+    
     // JWT has 3 parts separated by dots
     const parts = token.split('.');
+    console.log('🔐 [JWT DECODE] Token parts count:', parts.length);
+    
     if (parts.length !== 3) {
+      console.log('🔐 [JWT DECODE ERROR] Invalid JWT structure. Expected 3 parts, got:', parts.length);
       return null;
     }
 
     // Get the payload (second part)
     const payload = parts[1];
+    console.log('🔐 [JWT DECODE] Payload part length:', payload.length);
+    console.log('🔐 [JWT DECODE] Payload part preview:', `${payload.substring(0, 30)}...`);
     
     // JWT uses Base64URL encoding, need to convert to regular Base64
     const base64 = payload.replace(/-/g, '+').replace(/_/g, '/');
+    console.log('🔐 [JWT DECODE] Base64 conversion completed');
     
     // Decode from Base64
     const decoded = atob(base64);
+    console.log('🔐 [JWT DECODE] Base64 decode completed, result length:', decoded.length);
     
     // Parse JSON
-    return JSON.parse(decoded);
+    const parsedPayload = JSON.parse(decoded);
+    console.log('🔐 [JWT DECODE] JSON parse successful');
+    console.log('🔐 [JWT DECODE] Payload contents:', {
+      sub: parsedPayload.sub,
+      exp: parsedPayload.exp,
+      iat: parsedPayload.iat,
+      iss: parsedPayload.iss,
+      aud: parsedPayload.aud,
+      email: parsedPayload.email,
+      preferred_username: parsedPayload.preferred_username,
+      name: parsedPayload.name
+    });
+    
+    if (parsedPayload.exp) {
+      const expDate = new Date(parsedPayload.exp * 1000);
+      const now = new Date();
+      const isExpired = expDate < now;
+      console.log('🔐 [JWT DECODE] Token expiration:', {
+        expires: expDate.toISOString(),
+        now: now.toISOString(),
+        isExpired: isExpired
+      });
+    }
+    
+    console.log('🔐 [JWT DECODE] ✅ JWT decode completed successfully');
+    return parsedPayload;
   } catch (error) {
-    console.error('Failed to decode JWT:', error);
+    console.log('🔐 [JWT DECODE ERROR] Failed to decode JWT:', error);
+    console.log('🔐 [JWT DECODE ERROR] Error details:', {
+      message: error instanceof Error ? error.message : 'Unknown error',
+      stack: error instanceof Error ? error.stack : 'No stack trace'
+    });
     return null;
   }
 }

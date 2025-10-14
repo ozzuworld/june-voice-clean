@@ -2,6 +2,7 @@
  * LiveKit Voice Service
  * 
  * Handles voice communication using LiveKit for the June Voice Platform
+ * Updated to integrate with June orchestrator backend
  */
 
 import {
@@ -22,6 +23,7 @@ import {
 } from 'livekit-client';
 
 import { getLiveKitConfig, generateAccessToken, LiveKitConfig } from '../config/livekit';
+import { JuneApiClient, getJuneApiConfig } from '../config/api';
 import { requestMicrophonePermission } from '../utils/permissions';
 
 export interface LiveKitCallbacks {
@@ -36,6 +38,7 @@ export interface LiveKitCallbacks {
   onParticipantLeft?: (participant: RemoteParticipant) => void;
   onDataReceived?: (payload: Uint8Array, participant: RemoteParticipant) => void;
   onConnectionQualityChanged?: (quality: ConnectionQuality, participant: RemoteParticipant) => void;
+  onOrchestratorMessage?: (data: any) => void;
 }
 
 export class LiveKitVoiceService {
@@ -45,17 +48,44 @@ export class LiveKitVoiceService {
   private localAudioTrack: LocalAudioTrack | null = null;
   private isConnected = false;
   private currentRoomName: string | null = null;
+  private juneApi: JuneApiClient;
+  private orchestratorWs: WebSocket | null = null;
+  private sessionId: string | null = null;
 
   constructor(callbacks: LiveKitCallbacks = {}) {
     this.config = getLiveKitConfig();
     this.callbacks = callbacks;
+    this.juneApi = new JuneApiClient();
   }
 
   /**
-   * Connect to a LiveKit room
+   * Set authentication token for June API calls
+   */
+  setAuthToken(token: string): void {
+    this.juneApi.setAuthToken(token);
+  }
+
+  /**
+   * Connect to June platform (orchestrator + LiveKit)
    */
   async connect(roomName: string, participantName: string): Promise<boolean> {
     try {
+      console.log('🚀 Connecting to June platform...'); 
+      
+      // Step 1: Create session with June orchestrator
+      console.log('📋 Creating session with June orchestrator...');
+      const session = await this.juneApi.createSession(participantName, roomName);
+      this.sessionId = session.session_id;
+      console.log('✅ Session created:', this.sessionId);
+      
+      // Step 2: Connect to orchestrator WebSocket for real-time coordination
+      console.log('🔗 Connecting to orchestrator WebSocket...');
+      this.orchestratorWs = await this.juneApi.connectWebSocket(
+        this.sessionId,
+        (data) => this.callbacks.onOrchestratorMessage?.(data)
+      );
+      
+      // Step 3: Connect to LiveKit room for voice communication
       console.log('🔗 Connecting to LiveKit room:', roomName);
       
       // Initialize room
@@ -66,52 +96,54 @@ export class LiveKitVoiceService {
       this.setupEventHandlers();
       
       // Generate access token
-      console.log('🎫 Generating access token...');
+      console.log('🎫 Generating LiveKit access token...');
       const token = await generateAccessToken(roomName, participantName);
       
-      // Configure room options
+      // Configure room options with your TURN/STUN server
       const roomOptions: RoomOptions = {
-        // Configure adaptive streams and bandwidth
         adaptiveStream: true,
         dynacast: true,
         
-        // Audio settings
+        // Audio settings optimized for voice AI
         audioCaptureDefaults: {
           echoCancellation: true,
           noiseSuppression: true,
           autoGainControl: true,
         } as AudioCaptureOptions,
         
-        // Reconnection settings
         disconnectOnPageLeave: true,
       };
 
-      // Connect options with ICE servers
+      // Connect options with your STUNner TURN/STUN server
       const connectOptions: ConnectOptions = {
         autoSubscribe: true,
         rtcConfig: {
-          iceServers: this.config.iceServers,
+          iceServers: this.config.iceServers, // Uses your turn:34.59.53.188:3478
           iceCandidatePoolSize: 10,
         },
       };
       
-      // Connect to room
+      // Connect to LiveKit
       console.log('📡 Connecting to LiveKit server:', this.config.serverUrl);
       await this.room.connect(this.config.serverUrl, token, connectOptions);
       
       this.isConnected = true;
-      console.log('✅ Successfully connected to LiveKit room');
+      console.log('✅ Successfully connected to June platform');
       this.callbacks.onConnected?.();
       
       return true;
       
     } catch (error) {
-      console.error('❌ Failed to connect to LiveKit:', error);
-      let errorMessage = 'Failed to connect to voice room';
+      console.error('❌ Failed to connect to June platform:', error);
+      await this.cleanup();
+      
+      let errorMessage = 'Failed to connect to June platform';
       
       if (error instanceof Error) {
         if (error.message.includes('token')) {
           errorMessage = 'Authentication failed. Please check your credentials.';
+        } else if (error.message.includes('session')) {
+          errorMessage = 'Failed to create session. Please check your backend connection.';
         } else if (error.message.includes('network') || error.message.includes('connection')) {
           errorMessage = 'Network connection failed. Please check your internet connection.';
         } else {
@@ -125,24 +157,51 @@ export class LiveKitVoiceService {
   }
 
   /**
-   * Disconnect from the room
+   * Disconnect from the June platform
    */
   async disconnect(): Promise<void> {
-    console.log('🔌 Disconnecting from LiveKit...');
+    console.log('🔌 Disconnecting from June platform...');
     
+    await this.cleanup();
+    
+    // Delete session from orchestrator
+    if (this.sessionId) {
+      try {
+        await this.juneApi.deleteSession(this.sessionId);
+        console.log('🗑️ Session deleted:', this.sessionId);
+      } catch (error) {
+        console.warn('Failed to delete session:', error);
+      }
+      this.sessionId = null;
+    }
+    
+    this.callbacks.onDisconnected?.();
+  }
+
+  /**
+   * Clean up connections
+   */
+  private async cleanup(): Promise<void> {
+    // Stop audio track
     if (this.localAudioTrack) {
       this.localAudioTrack.stop();
       this.localAudioTrack = null;
     }
     
+    // Disconnect from LiveKit
     if (this.room) {
       await this.room.disconnect();
       this.room = null;
     }
     
+    // Close orchestrator WebSocket
+    if (this.orchestratorWs) {
+      this.orchestratorWs.close();
+      this.orchestratorWs = null;
+    }
+    
     this.isConnected = false;
     this.currentRoomName = null;
-    this.callbacks.onDisconnected?.();
   }
 
   /**
@@ -151,7 +210,7 @@ export class LiveKitVoiceService {
   async startVoiceCall(): Promise<boolean> {
     try {
       if (!this.isConnected || !this.room) {
-        throw new Error('Not connected to LiveKit room');
+        throw new Error('Not connected to June platform');
       }
 
       console.log('🎤 Starting voice call...');
@@ -230,7 +289,18 @@ export class LiveKitVoiceService {
   }
 
   /**
-   * Send data message to all participants
+   * Send message to June AI through orchestrator
+   */
+  async sendAiMessage(message: string): Promise<any> {
+    if (!this.sessionId) {
+      throw new Error('No active session');
+    }
+    
+    return await this.juneApi.sendAiMessage(message, this.sessionId);
+  }
+
+  /**
+   * Send data message to LiveKit participants
    */
   async sendDataMessage(message: string): Promise<void> {
     if (this.room && this.isConnected) {
@@ -238,49 +308,67 @@ export class LiveKitVoiceService {
       const data = encoder.encode(message);
       
       await this.room.localParticipant.publishData(data, DataPacket_Kind.RELIABLE);
-      console.log('📤 Data message sent:', message);
+      console.log('📤 Data message sent to LiveKit:', message);
     }
   }
 
   /**
-   * Get current room statistics
+   * Get conversation history from orchestrator
    */
-  getRoomStats(): any {
-    if (!this.room) return null;
+  async getConversationHistory(): Promise<any> {
+    if (!this.sessionId) {
+      throw new Error('No active session');
+    }
     
+    return await this.juneApi.getConversationHistory(this.sessionId);
+  }
+
+  /**
+   * Get current platform statistics
+   */
+  getPlatformStats(): any {
     return {
-      participants: this.room.numParticipants,
-      isConnected: this.isConnected,
-      roomName: this.currentRoomName,
-      connectionState: this.room.state,
-      localParticipant: this.room.localParticipant.identity,
+      // LiveKit stats
+      livekit: {
+        participants: this.room?.numParticipants || 0,
+        isConnected: this.isConnected,
+        roomName: this.currentRoomName,
+        connectionState: this.room?.state,
+        localParticipant: this.room?.localParticipant.identity,
+      },
+      // June platform stats
+      june: {
+        sessionId: this.sessionId,
+        orchestratorConnected: this.orchestratorWs?.readyState === WebSocket.OPEN,
+        backendHealthy: true, // You can add health check here
+      }
     };
   }
 
   /**
-   * Setup event handlers for the room
+   * Setup event handlers for the LiveKit room
    */
   private setupEventHandlers(): void {
     if (!this.room) return;
 
     // Connection events
     this.room.on(RoomEvent.Connected, () => {
-      console.log('🟢 Room connected');
+      console.log('🟢 LiveKit room connected');
       this.isConnected = true;
     });
 
     this.room.on(RoomEvent.Disconnected, (reason) => {
-      console.log('🔴 Room disconnected:', reason);
+      console.log('🔴 LiveKit room disconnected:', reason);
       this.isConnected = false;
       this.callbacks.onDisconnected?.();
     });
 
     this.room.on(RoomEvent.Reconnecting, () => {
-      console.log('🟡 Room reconnecting...');
+      console.log('🟡 LiveKit room reconnecting...');
     });
 
     this.room.on(RoomEvent.Reconnected, () => {
-      console.log('🟢 Room reconnected');
+      console.log('🟢 LiveKit room reconnected');
       this.isConnected = true;
     });
 
@@ -331,8 +419,18 @@ export class LiveKitVoiceService {
   /**
    * Get connection status
    */
-  isConnectedToRoom(): boolean {
-    return this.isConnected && this.room?.state === RoomState.Connected;
+  isConnectedToPlatform(): boolean {
+    return this.isConnected && 
+           this.room?.state === RoomState.Connected &&
+           this.orchestratorWs?.readyState === WebSocket.OPEN &&
+           this.sessionId !== null;
+  }
+
+  /**
+   * Get current session ID
+   */
+  getSessionId(): string | null {
+    return this.sessionId;
   }
 
   /**

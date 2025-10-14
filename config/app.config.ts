@@ -1,4 +1,4 @@
-// config/app.config.ts - Enhanced configuration for WebSocket voice chat
+// config/app.config.ts - Enhanced configuration for LiveKit voice chat
 const APP_CONFIG = {
   // ✅ IMPORTANT: Use HTTP if certificate is self-signed/staging
   // Change to 'https' once you have a proper certificate
@@ -23,32 +23,40 @@ const APP_CONFIG = {
     stt: 'https://stt.ozzu.world',
     tts: 'https://tts.ozzu.world',
     idp: 'https://idp.ozzu.world',
+    livekit: 'wss://livekit.ozzu.world', // ✅ NEW: LiveKit server
   },
 
   ENDPOINTS: {
-    // ✅ NEW: WebSocket endpoint for real-time chat (replaces /v1/chat)
-    WEBSOCKET: '/ws',
+    // ✅ NEW: LiveKit endpoints
+    LIVEKIT_TOKEN: '/livekit/token',
+    LIVEKIT_CONFIG: '/livekit/config',
     
     // ✅ UPDATED: STT endpoint for voice transcription
     STT: '/v1/transcribe',
     
     // Keep existing endpoints for compatibility
-    CHAT: '/v1/chat',  // Fallback HTTP endpoint
+    CHAT: '/v1/chat',
     TTS: '/tts/generate',
     VOICE_PROCESS: '/v1/voice-process',
     
-    // ✅ NEW: Health and status endpoints
+    // ✅ Health and status endpoints
     HEALTH: '/healthz',
     STATUS: '/status',
     STT_WEBHOOK: '/v1/stt/webhook',
   },
 
-  // ✅ NEW: WebSocket configuration
-  WEBSOCKET: {
+  // ✅ NEW: LiveKit configuration
+  LIVEKIT: {
+    DEFAULT_ROOM_PREFIX: 'june-voice-',
     AUTO_RECONNECT: true,
     RECONNECT_DELAY: 3000,
     MAX_RECONNECT_ATTEMPTS: 5,
-    PING_INTERVAL: 30000,
+    TOKEN_TTL_MINUTES: 60,
+    AUDIO_SETTINGS: {
+      echoCancellation: true,
+      noiseSuppression: true,
+      autoGainControl: true,
+    },
   },
 
   TTS: {
@@ -65,7 +73,8 @@ const APP_CONFIG = {
     TTS: 90000,
     CHAT: 60000,
     VOICE: 120000,
-    WEBSOCKET_CONNECT: 10000,  // ✅ NEW: WebSocket connection timeout
+    LIVEKIT_CONNECT: 10000,  // ✅ NEW: LiveKit connection timeout
+    TOKEN_REFRESH: 5000,     // ✅ NEW: Token refresh timeout
   },
 
   DEBUG: {
@@ -73,7 +82,7 @@ const APP_CONFIG = {
     VERBOSE_LOGS: true,
     MOCK_RESPONSES: false,
     TTS_FALLBACK: true,
-    WEBSOCKET_LOGS: true,  // ✅ NEW: WebSocket debugging
+    LIVEKIT_LOGS: true,  // ✅ NEW: LiveKit debugging
   },
 
   STT: {
@@ -83,18 +92,37 @@ const APP_CONFIG = {
     DEFAULT_LANGUAGE: 'en',
   },
 
-  // ✅ NEW: Audio configuration
+  // ✅ UPDATED: Audio configuration for LiveKit
   AUDIO: {
     RECORDING: {
       EXTENSION: '.m4a',
       SAMPLE_RATE: 44100,
-      CHANNELS: 2,
-      BIT_RATE: 128000,
-      QUALITY: 'high',
+      CHANNELS: 1, // Mono for voice calls
+      BIT_RATE: 64000, // Lower bitrate for voice
+      QUALITY: 'medium',
     },
     PLAYBACK: {
       AUTO_PLAY: true,
       VOLUME: 1.0,
+    },
+    VOICE_CALL: {
+      echoCancellation: true,
+      noiseSuppression: true,
+      autoGainControl: true,
+      sampleRate: 48000,
+      channels: 1,
+    },
+  },
+
+  // ✅ NEW: TURN server configuration (matches your STUNner setup)
+  TURN_SERVERS: {
+    PRIMARY: {
+      urls: ['stun:34.59.53.188:3478'],
+    },
+    FALLBACK: {
+      urls: ['turn:34.59.53.188:3478'],
+      username: 'june-user',
+      credential: 'Pokemon123!',
     },
   },
 } as const;

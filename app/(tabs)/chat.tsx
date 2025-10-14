@@ -1,8 +1,9 @@
+/**
+ * Chat Screen - UPDATED FOR LIVEKIT + JUNE PLATFORM
+ * 
+ * Modern voice chat interface using LiveKit WebRTC and June orchestrator backend
+ */
 
-// ============================================================================
-// FILE 3: apps/expo/app/(tabs)/chat.tsx
-// REPLACE ENTIRE FILE
-// ============================================================================
 import React, { useState, useEffect, useRef } from 'react';
 import {
   View,
@@ -57,7 +58,7 @@ export default function ChatScreen() {
 
   useEffect(() => {
     if (isAuthenticated) {
-      console.log('🔌 Connecting...');
+      console.log('🔌 Connecting to June platform...');
       connect();
     }
   }, [isAuthenticated, connect]);
@@ -139,7 +140,7 @@ export default function ChatScreen() {
 
   const handleMainRingPress = async () => {
     if (!isConnected) {
-      Alert.alert('Not Connected', 'Waiting for connection...');
+      Alert.alert('Not Connected', 'Connecting to June platform...');
       return;
     }
 
@@ -149,7 +150,7 @@ export default function ChatScreen() {
       try {
         await startStreaming();
       } catch (error: any) {
-        Alert.alert('Error', error.message || 'Failed to start');
+        Alert.alert('Error', error.message || 'Failed to start voice call');
       }
     }
   };
@@ -180,6 +181,12 @@ export default function ChatScreen() {
     return '#007AFF';
   };
 
+  const getConnectionStatusText = () => {
+    if (!isConnected) return 'Connecting...';
+    if (isStreaming) return 'Listening';
+    return 'Connected';
+  };
+
   const spin = rotationValue.interpolate({
     inputRange: [0, 1],
     outputRange: ['0deg', '360deg']
@@ -190,7 +197,7 @@ export default function ChatScreen() {
       <SafeAreaView style={styles.container}>
         <View style={styles.authContainer}>
           <Text style={styles.authTitle}>June Voice</Text>
-          <Text style={styles.authSubtitle}>WebRTC Voice Chat</Text>
+          <Text style={styles.authSubtitle}>LiveKit + June Platform Integration</Text>
           {authError && <Text style={styles.errorText}>{authError}</Text>}
           <TouchableOpacity
             style={[styles.authButton, isLoading && styles.authButtonDisabled]}
@@ -248,13 +255,22 @@ export default function ChatScreen() {
           </TouchableOpacity>
 
           <View style={styles.statusBadge}>
-            <Text style={styles.statusBadgeText}>WebRTC</Text>
+            <Text style={styles.statusBadgeText}>LiveKit + June</Text>
             <View style={[styles.statusDot, { backgroundColor: isConnected ? '#34C759' : '#FF3B30' }]} />
+          </View>
+          
+          {/* Connection info */}
+          <View style={styles.connectionInfo}>
+            <Text style={styles.connectionText}>{getConnectionStatusText()}</Text>
+            {sessionId && (
+              <Text style={styles.sessionText}>Session: {sessionId.substring(0, 8)}...</Text>
+            )}
           </View>
         </View>
 
         {webrtcError && (
           <View style={styles.errorBanner}>
+            <Ionicons name="warning" size={16} color="#FF3B30" style={{ marginRight: 8 }} />
             <Text style={styles.errorBannerText}>{webrtcError}</Text>
           </View>
         )}
@@ -282,7 +298,12 @@ export default function ChatScreen() {
 
           <View style={styles.menuItem}>
             <View style={[styles.dot, { backgroundColor: isConnected ? '#34C759' : '#FF3B30' }]} />
-            <Text style={styles.menuItemText}>{isConnected ? 'Connected' : 'Disconnected'}</Text>
+            <Text style={styles.menuItemText}>{getConnectionStatusText()}</Text>
+          </View>
+          
+          <View style={styles.menuItem}>
+            <Ionicons name="server" size={20} color="#8E8E93" />
+            <Text style={[styles.menuItemText, { color: '#8E8E93' }]}>api.allsafe.world</Text>
           </View>
 
           <TouchableOpacity onPress={() => { signOut(); toggleMenu(); }} style={styles.menuItem}>
@@ -299,7 +320,7 @@ export default function ChatScreen() {
           }
         ]}>
           <View style={styles.chatHeader}>
-            <Text style={styles.chatTitle}>Conversation</Text>
+            <Text style={styles.chatTitle}>AI Conversation</Text>
             <TouchableOpacity onPress={toggleChat}>
               <Ionicons name="close" size={20} color="#8E8E93" />
             </TouchableOpacity>
@@ -315,8 +336,8 @@ export default function ChatScreen() {
             ListEmptyComponent={() => (
               <View style={styles.emptyState}>
                 <Ionicons name="chatbubbles-outline" size={48} color="#48484A" />
-                <Text style={styles.emptyText}>No messages</Text>
-                <Text style={styles.emptySubtext}>Tap the ring to start talking</Text>
+                <Text style={styles.emptyText}>No messages yet</Text>
+                <Text style={styles.emptySubtext}>Start talking to begin your AI conversation</Text>
               </View>
             )}
           />
@@ -334,8 +355,8 @@ const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#000000' },
   authContainer: { flex: 1, justifyContent: 'center', alignItems: 'center', padding: 20 },
   authTitle: { fontSize: 32, fontWeight: 'bold', color: '#FFFFFF', marginBottom: 8 },
-  authSubtitle: { fontSize: 16, color: '#8E8E93', marginBottom: 32 },
-  errorText: { color: '#FF3B30', fontSize: 14, marginBottom: 16 },
+  authSubtitle: { fontSize: 16, color: '#8E8E93', marginBottom: 32, textAlign: 'center' },
+  errorText: { color: '#FF3B30', fontSize: 14, marginBottom: 16, textAlign: 'center' },
   authButton: { backgroundColor: '#007AFF', paddingHorizontal: 32, paddingVertical: 16, borderRadius: 12 },
   authButtonDisabled: { opacity: 0.6 },
   authButtonText: { color: '#FFFFFF', fontSize: 16, fontWeight: '600' },
@@ -345,13 +366,16 @@ const styles = StyleSheet.create({
   mainRing: { width: 200, height: 200, borderRadius: 100, borderWidth: 4, shadowOpacity: 0.6, shadowRadius: 15, shadowOffset: { width: 0, height: 0 }, justifyContent: 'center', alignItems: 'center' },
   innerRing: { width: 160, height: 160, borderRadius: 80, justifyContent: 'center', alignItems: 'center' },
   statusText: { marginTop: 8, fontSize: 14, fontWeight: '600' },
-  statusBadge: { position: 'absolute', bottom: 100, flexDirection: 'row', alignItems: 'center', backgroundColor: '#1C1C1E', paddingHorizontal: 12, paddingVertical: 6, borderRadius: 16 },
+  statusBadge: { position: 'absolute', bottom: 120, flexDirection: 'row', alignItems: 'center', backgroundColor: '#1C1C1E', paddingHorizontal: 12, paddingVertical: 6, borderRadius: 16 },
   statusBadgeText: { color: '#FFFFFF', fontSize: 12, fontWeight: '600', marginRight: 6 },
   statusDot: { width: 8, height: 8, borderRadius: 4 },
-  errorBanner: { position: 'absolute', top: 60, left: 20, right: 20, backgroundColor: '#FF3B3020', borderColor: '#FF3B30', borderWidth: 1, borderRadius: 8, padding: 12 },
-  errorBannerText: { color: '#FF3B30', fontSize: 14, textAlign: 'center' },
+  connectionInfo: { position: 'absolute', bottom: 80, alignItems: 'center' },
+  connectionText: { color: '#FFFFFF', fontSize: 16, fontWeight: '500', marginBottom: 4 },
+  sessionText: { color: '#8E8E93', fontSize: 12, fontFamily: 'monospace' },
+  errorBanner: { position: 'absolute', top: 60, left: 20, right: 20, backgroundColor: '#FF3B3020', borderColor: '#FF3B30', borderWidth: 1, borderRadius: 8, padding: 12, flexDirection: 'row', alignItems: 'center' },
+  errorBannerText: { color: '#FF3B30', fontSize: 14, flex: 1 },
   menuButton: { position: 'absolute', top: 60, left: 20, width: 50, height: 50, borderRadius: 25, backgroundColor: '#007AFF', justifyContent: 'center', alignItems: 'center' },
-  menu: { position: 'absolute', top: 120, left: 20, backgroundColor: '#1C1C1E', borderRadius: 12, padding: 16, minWidth: 180 },
+  menu: { position: 'absolute', top: 120, left: 20, backgroundColor: '#1C1C1E', borderRadius: 12, padding: 16, minWidth: 200 },
   overlay: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.3)' },
   menuItem: { flexDirection: 'row', alignItems: 'center', paddingVertical: 12 },
   menuItemText: { fontSize: 16, color: '#FFFFFF', marginLeft: 12, flex: 1 },

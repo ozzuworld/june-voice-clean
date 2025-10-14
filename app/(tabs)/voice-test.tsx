@@ -1,7 +1,7 @@
 /**
  * Voice Test Screen
  * 
- * Demo screen to test Janus WebRTC integration
+ * Updated to use LiveKit + June Platform integration
  * Shows connection status and provides voice call controls
  */
 
@@ -9,250 +9,84 @@ import React from 'react';
 import {
   View,
   Text,
-  TouchableOpacity,
   StyleSheet,
-  Alert,
-  ScrollView,
-  SafeAreaView
+  SafeAreaView,
+  ScrollView
 } from 'react-native';
-import { useJanusWebRTC } from '../../hooks/useJanusWebRTC';
-import { requestMicrophonePermission, checkMicrophonePermission, showPermissionDeniedAlert } from '../../utils/permissions';
+import { JuneVoiceChat } from '../../components/JuneVoiceChat';
 
 export default function VoiceTestScreen() {
-  const {
-    // Connection state
-    isConnected,
-    isConnecting,
-    connectionError,
-    
-    // Call state
-    isInCall,
-    isCallStarting,
-    callError,
-    
-    // Streams
-    localStream,
-    remoteStream,
-    
-    // Actions
-    connect,
-    disconnect,
-    startCall,
-    endCall
-  } = useJanusWebRTC({
-    onCallStarted: () => {
-      Alert.alert('Call Started', 'Voice call is now active!');
-    },
-    onCallEnded: () => {
-      Alert.alert('Call Ended', 'Voice call has ended.');
-    },
-    onError: (error) => {
-      console.error('WebRTC Error:', error);
-      if (error.includes('permission') || error.includes('Permission')) {
-        showPermissionDeniedAlert();
-      } else {
-        Alert.alert('WebRTC Error', error);
-      }
-    }
-  });
-  
-  /**
-   * Check microphone permissions before starting call
-   */
-  const checkPermissionsAndStartCall = async () => {
-    try {
-      console.log('🔍 Checking microphone permissions...');
-      
-      const hasPermission = await checkMicrophonePermission();
-      if (!hasPermission) {
-        console.log('❌ No microphone permission, requesting...');
-        const granted = await requestMicrophonePermission();
-        if (!granted) {
-          showPermissionDeniedAlert();
-          return;
-        }
-      }
-      
-      console.log('✅ Microphone permission granted, starting call...');
-      startCall();
-      
-    } catch (error) {
-      console.error('❌ Permission check failed:', error);
-      Alert.alert(
-        'Permission Error',
-        'Failed to check microphone permissions. Please try again.',
-        [{ text: 'OK' }]
-      );
-    }
-  };
-  
-  const getConnectionStatusColor = () => {
-    if (isConnected) return '#4CAF50';
-    if (isConnecting) return '#FF9800';
-    return '#F44336';
-  };
-  
-  const getConnectionStatusText = () => {
-    if (isConnected) return 'Connected to Janus Gateway';
-    if (isConnecting) return 'Connecting...';
-    return 'Disconnected';
-  };
-  
-  const getCallStatusColor = () => {
-    if (isInCall) return '#4CAF50';
-    if (isCallStarting) return '#FF9800';
-    return '#9E9E9E';
-  };
-  
-  const getCallStatusText = () => {
-    if (isInCall) return 'In Voice Call';
-    if (isCallStarting) return 'Starting Call...';
-    return 'No Active Call';
-  };
-  
   return (
     <SafeAreaView style={styles.container}>
       <ScrollView contentContainerStyle={styles.content}>
         <Text style={styles.title}>June Voice Platform Test</Text>
+        <Text style={styles.subtitle}>
+          Testing LiveKit + June Orchestrator Integration
+        </Text>
         
-        {/* Connection Status */}
-        <View style={styles.statusSection}>
-          <Text style={styles.sectionTitle}>Connection Status</Text>
-          <View style={[styles.statusIndicator, { backgroundColor: getConnectionStatusColor() }]}>
-            <Text style={styles.statusText}>{getConnectionStatusText()}</Text>
-          </View>
-          
-          {connectionError && (
-            <View style={styles.errorContainer}>
-              <Text style={styles.errorText}>Error: {connectionError}</Text>
-            </View>
-          )}
-          
-          <Text style={styles.endpointText}>Endpoint: wss://ozzu.world/janus-ws</Text>
-        </View>
+        {/* Main Voice Chat Component */}
+        <JuneVoiceChat
+          roomName="voice-test-room"
+          participantName="test-user"
+          onCallStateChanged={(inCall) => {
+            console.log(`🎤 Call state changed: ${inCall ? 'IN CALL' : 'NOT IN CALL'}`);
+          }}
+          onAiResponse={(response) => {
+            console.log('🤖 AI Response:', response);
+          }}
+          onError={(error) => {
+            console.error('❌ Voice Test Error:', error);
+          }}
+        />
         
-        {/* Call Status */}
-        <View style={styles.statusSection}>
-          <Text style={styles.sectionTitle}>Call Status</Text>
-          <View style={[styles.statusIndicator, { backgroundColor: getCallStatusColor() }]}>
-            <Text style={styles.statusText}>{getCallStatusText()}</Text>
+        {/* Test Information */}
+        <View style={styles.infoSection}>
+          <Text style={styles.infoTitle}>Test Configuration</Text>
+          <View style={styles.infoItem}>
+            <Text style={styles.infoLabel}>Backend:</Text>
+            <Text style={styles.infoValue}>api.allsafe.world</Text>
           </View>
-          
-          {callError && (
-            <View style={styles.errorContainer}>
-              <Text style={styles.errorText}>Call Error: {callError}</Text>
-            </View>
-          )}
-        </View>
-        
-        {/* Stream Status */}
-        <View style={styles.statusSection}>
-          <Text style={styles.sectionTitle}>Audio Streams</Text>
-          <View style={styles.streamStatus}>
-            <Text style={styles.streamText}>
-              Local Audio: {localStream ? '✅ Active' : '❌ None'}
-            </Text>
-            <Text style={styles.streamText}>
-              Remote Audio: {remoteStream ? '✅ Active' : '❌ None'}
-            </Text>
+          <View style={styles.infoItem}>
+            <Text style={styles.infoLabel}>LiveKit:</Text>
+            <Text style={styles.infoValue}>livekit.allsafe.world</Text>
           </View>
-        </View>
-        
-        {/* Control Buttons */}
-        <View style={styles.controlsSection}>
-          <Text style={styles.sectionTitle}>Controls</Text>
-          
-          {/* Connection Controls */}
-          <View style={styles.buttonRow}>
-            <TouchableOpacity
-              style={[
-                styles.button,
-                styles.connectButton,
-                (isConnecting || isConnected) && styles.buttonDisabled
-              ]}
-              onPress={connect}
-              disabled={isConnecting || isConnected}
-            >
-              <Text style={styles.buttonText}>
-                {isConnecting ? 'Connecting...' : 'Connect'}
-              </Text>
-            </TouchableOpacity>
-            
-            <TouchableOpacity
-              style={[
-                styles.button,
-                styles.disconnectButton,
-                (!isConnected) && styles.buttonDisabled
-              ]}
-              onPress={disconnect}
-              disabled={!isConnected}
-            >
-              <Text style={styles.buttonText}>Disconnect</Text>
-            </TouchableOpacity>
+          <View style={styles.infoItem}>
+            <Text style={styles.infoLabel}>TURN Server:</Text>
+            <Text style={styles.infoValue}>34.59.53.188:3478</Text>
           </View>
-          
-          {/* Call Controls */}
-          <View style={styles.buttonRow}>
-            <TouchableOpacity
-              style={[
-                styles.button,
-                styles.callButton,
-                (!isConnected || isCallStarting || isInCall) && styles.buttonDisabled
-              ]}
-              onPress={checkPermissionsAndStartCall}
-              disabled={!isConnected || isCallStarting || isInCall}
-            >
-              <Text style={styles.buttonText}>
-                {isCallStarting ? 'Starting...' : 'Start Voice Call'}
-              </Text>
-            </TouchableOpacity>
-            
-            <TouchableOpacity
-              style={[
-                styles.button,
-                styles.endCallButton,
-                (!isInCall) && styles.buttonDisabled
-              ]}
-              onPress={endCall}
-              disabled={!isInCall}
-            >
-              <Text style={styles.buttonText}>End Call</Text>
-            </TouchableOpacity>
+          <View style={styles.infoItem}>
+            <Text style={styles.infoLabel}>Room:</Text>
+            <Text style={styles.infoValue}>voice-test-room</Text>
           </View>
         </View>
         
         {/* Instructions */}
         <View style={styles.instructionsSection}>
-          <Text style={styles.sectionTitle}>Instructions</Text>
+          <Text style={styles.instructionsTitle}>How to Test</Text>
           <Text style={styles.instructionText}>
-            1. Tap "Connect" to establish WebSocket connection to Janus Gateway
+            1. 🔗 Tap "Connect to June" to establish connection
           </Text>
           <Text style={styles.instructionText}>
-            2. Once connected, tap "Start Voice Call" to begin audio session
+            2. 🎤 Tap "Start Call" to begin voice session
           </Text>
           <Text style={styles.instructionText}>
-            3. The app will automatically request microphone permissions
+            3. 📱 Grant microphone permissions when prompted
           </Text>
           <Text style={styles.instructionText}>
-            4. Grant microphone access when prompted by the system
+            4. 🤖 Try "Send AI Message" to test orchestrator
           </Text>
           <Text style={styles.instructionText}>
-            5. Test voice communication with other connected clients
+            5. 🔇 Use "Mute/Unmute" to control audio
           </Text>
           <Text style={styles.instructionText}>
-            6. Tap "End Call" to stop the audio session
+            6. 📴 "End Call" when finished testing
           </Text>
           
-          <View style={styles.troubleshootingSection}>
-            <Text style={styles.troubleshootingTitle}>Troubleshooting:</Text>
-            <Text style={styles.troubleshootingText}>
-              • If you see "Permission denied" errors, make sure to allow microphone access in your device settings
-            </Text>
-            <Text style={styles.troubleshootingText}>
-              • On Android, you may see a permission dialog - tap "Allow"
-            </Text>
-            <Text style={styles.troubleshootingText}>
-              • On iOS, check Settings → Privacy → Microphone → June Voice App
+          <View style={styles.noteSection}>
+            <Text style={styles.noteTitle}>📝 Note:</Text>
+            <Text style={styles.noteText}>
+              This test connects to your June backend with LiveKit WebRTC. 
+              Make sure your backend is running with the LiveKit token endpoint added.
             </Text>
           </View>
         </View>
@@ -270,135 +104,95 @@ const styles = StyleSheet.create({
     padding: 20,
   },
   title: {
-    fontSize: 24,
+    fontSize: 28,
     fontWeight: 'bold',
     textAlign: 'center',
-    marginBottom: 30,
+    marginBottom: 8,
     color: '#333',
   },
-  statusSection: {
+  subtitle: {
+    fontSize: 16,
+    textAlign: 'center',
+    marginBottom: 30,
+    color: '#666',
+    fontStyle: 'italic',
+  },
+  infoSection: {
     backgroundColor: 'white',
-    padding: 15,
-    borderRadius: 10,
-    marginBottom: 15,
+    padding: 20,
+    borderRadius: 12,
+    marginBottom: 20,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.1,
     shadowRadius: 4,
     elevation: 3,
   },
-  sectionTitle: {
+  infoTitle: {
     fontSize: 18,
     fontWeight: '600',
-    marginBottom: 10,
+    marginBottom: 15,
     color: '#333',
-  },
-  statusIndicator: {
-    padding: 10,
-    borderRadius: 8,
-    marginBottom: 10,
-  },
-  statusText: {
-    color: 'white',
-    fontWeight: '600',
     textAlign: 'center',
   },
-  errorContainer: {
-    backgroundColor: '#FFEBEE',
-    padding: 10,
-    borderRadius: 6,
-    marginBottom: 10,
-  },
-  errorText: {
-    color: '#D32F2F',
-    fontSize: 14,
-  },
-  endpointText: {
-    fontSize: 12,
-    color: '#666',
-    fontFamily: 'monospace',
-  },
-  streamStatus: {
-    gap: 5,
-  },
-  streamText: {
-    fontSize: 14,
-    color: '#666',
-  },
-  controlsSection: {
-    backgroundColor: 'white',
-    padding: 15,
-    borderRadius: 10,
-    marginBottom: 15,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 3,
-  },
-  buttonRow: {
+  infoItem: {
     flexDirection: 'row',
-    gap: 10,
-    marginBottom: 10,
-  },
-  button: {
-    flex: 1,
-    padding: 12,
-    borderRadius: 8,
+    justifyContent: 'space-between',
     alignItems: 'center',
+    paddingVertical: 8,
+    borderBottomWidth: 1,
+    borderBottomColor: '#f0f0f0',
   },
-  buttonText: {
-    color: 'white',
-    fontWeight: '600',
+  infoLabel: {
     fontSize: 14,
+    fontWeight: '500',
+    color: '#555',
   },
-  connectButton: {
-    backgroundColor: '#4CAF50',
-  },
-  disconnectButton: {
-    backgroundColor: '#FF9800',
-  },
-  callButton: {
-    backgroundColor: '#2196F3',
-  },
-  endCallButton: {
-    backgroundColor: '#F44336',
-  },
-  buttonDisabled: {
-    backgroundColor: '#CCCCCC',
+  infoValue: {
+    fontSize: 14,
+    color: '#007AFF',
+    fontFamily: 'monospace',
   },
   instructionsSection: {
     backgroundColor: 'white',
-    padding: 15,
-    borderRadius: 10,
+    padding: 20,
+    borderRadius: 12,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.1,
     shadowRadius: 4,
     elevation: 3,
   },
-  instructionText: {
-    fontSize: 14,
-    color: '#666',
-    marginBottom: 8,
-    lineHeight: 20,
-  },
-  troubleshootingSection: {
-    marginTop: 15,
-    padding: 10,
-    backgroundColor: '#F3F4F6',
-    borderRadius: 6,
-  },
-  troubleshootingTitle: {
-    fontSize: 14,
+  instructionsTitle: {
+    fontSize: 18,
     fontWeight: '600',
-    color: '#374151',
+    marginBottom: 15,
+    color: '#333',
+    textAlign: 'center',
+  },
+  instructionText: {
+    fontSize: 15,
+    color: '#555',
+    marginBottom: 12,
+    lineHeight: 22,
+  },
+  noteSection: {
+    marginTop: 20,
+    padding: 15,
+    backgroundColor: '#E3F2FD',
+    borderRadius: 8,
+    borderLeftWidth: 4,
+    borderLeftColor: '#2196F3',
+  },
+  noteTitle: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#1976D2',
     marginBottom: 8,
   },
-  troubleshootingText: {
-    fontSize: 13,
-    color: '#6B7280',
-    marginBottom: 4,
-    lineHeight: 18,
+  noteText: {
+    fontSize: 14,
+    color: '#1565C0',
+    lineHeight: 20,
   },
 });

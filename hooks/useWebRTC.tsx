@@ -36,20 +36,17 @@ export function useWebRTC() {
   const peerConnectionRef = useRef<RTCPeerConnection | null>(null);
   const localStreamRef = useRef<any>(null);
 
-  // Enhanced ICE configuration for internet connections
   const rtcConfig = {
     iceServers: [
-      { urls: 'stun:stun.l.google.com:19302' },
-      { urls: 'stun:stun1.l.google.com:19302' },
-      { urls: 'stun:stun2.l.google.com:19302' },
-      { urls: 'stun:stun3.l.google.com:19302' },
-      { urls: 'stun:stun.cloudflare.com:3478' },
+      { urls: 'stun:turn.ozzu.world:3478' },
+      { 
+        urls: 'turn:turn.ozzu.world:3478',
+        username: 'june-user',
+        credential: 'Pokemon123!'
+      }
     ],
-    // Add these ICE transport policies for better connectivity
-    iceTransportPolicy: 'all',
-    bundlePolicy: 'balanced',
-    rtcpMuxPolicy: 'require',
-  };
+  }
+
 
   const connect = useCallback(() => {
     if (!accessToken) {

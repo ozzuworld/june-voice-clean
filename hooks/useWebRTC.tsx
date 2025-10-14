@@ -1,19 +1,19 @@
-import { useState, useRef, useEffect, useCallback } from 'react';
-import { RTCPeerConnection, RTCSessionDescription, RTCIceCandidate, mediaDevices } from 'react-native-webrtc';
-import { useAuth } from './useAuth';
+/**
+ * WebRTC Hook - UPDATED TO USE LIVEKIT + JUNE ORCHESTRATOR
+ * 
+ * This hook is now deprecated in favor of the new LiveKitVoiceService.
+ * It's kept for backward compatibility but should be replaced with:
+ * 
+ * import { LiveKitVoiceService } from '../lib/LiveKitVoiceService';
+ * or
+ * import { JuneVoiceChat } from '../components/JuneVoiceChat';
+ */
 
-interface WebRTCMessage {
-  type: 'webrtc_offer' | 'webrtc_answer' | 'ice_candidate' | 'connected' | 'transcription_result' | 'text_response' | 'error' | 'audio_stream_start' | 'audio_stream_complete';
-  sdp?: string;
-  candidate?: any;
-  text?: string;
-  transcript?: string;
-  session_id?: string;
-  message?: string;
-  ice_servers?: any[];
-  features?: string[];
-  webrtc_enabled?: boolean;
-}
+import { useState, useRef, useEffect, useCallback } from 'react';
+import { Alert } from 'react-native';
+import { useAuth } from './useAuth';
+import { LiveKitVoiceService, LiveKitCallbacks } from '../lib/LiveKitVoiceService';
+import type { RemoteParticipant, RemoteAudioTrack, LocalAudioTrack } from 'livekit-client';
 
 interface Message {
   id: string;
@@ -23,6 +23,12 @@ interface Message {
   isVoice?: boolean;
 }
 
+/**
+ * LEGACY HOOK - Use LiveKitVoiceService directly instead
+ * 
+ * This hook provides backward compatibility for existing components
+ * but internally uses the new LiveKit + June orchestrator integration
+ */
 export function useWebRTC() {
   const { accessToken } = useAuth();
   
@@ -32,375 +38,221 @@ export function useWebRTC() {
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   
-  const wsRef = useRef<WebSocket | null>(null);
-  const peerConnectionRef = useRef<RTCPeerConnection | null>(null);
-  const localStreamRef = useRef<any>(null);
+  const voiceServiceRef = useRef<LiveKitVoiceService | null>(null);
 
-  const rtcConfig = {
-    iceServers: [
-      { urls: 'stun:turn.ozzu.world:3478' },
-      { 
-        urls: 'turn:turn.ozzu.world:3478',
-        username: 'june-user',
-        credential: 'Pokemon123!'
-      }
-    ],
-  }
-
-
-  const connect = useCallback(() => {
-    if (!accessToken) {
-      console.error('❌ No access token');
-      setError('Authentication required');
-      return;
+  // Initialize LiveKit voice service
+  const initializeVoiceService = useCallback(() => {
+    if (voiceServiceRef.current) {
+      return voiceServiceRef.current;
     }
 
-    // ✅ FIXED: Connect to Janus WebSocket endpoint (no auth needed)
-    const wsUrl = `wss://janus.ozzu.world/janus-ws`;
-    console.log('🔌 Connecting WebSocket...');
+    const callbacks: LiveKitCallbacks = {
+      onConnected: () => {
+        console.log('✅ Connected to June platform');
+        setIsConnected(true);
+        setError(null);
+        const service = voiceServiceRef.current;
+        if (service) {
+          setSessionId(service.getSessionId());
+        }
+      },
 
-    wsRef.current = new WebSocket(wsUrl, 'janus-protocol');
+      onDisconnected: () => {
+        console.log('🔌 Disconnected from June platform');
+        setIsConnected(false);
+        setIsStreaming(false);
+        setSessionId(null);
+      },
 
-    wsRef.current.onopen = () => {
-      console.log('✅ WebSocket connected');
-      setIsConnected(true);
-      setError(null);
-    };
+      onError: (errorMessage: string) => {
+        console.error('❌ June platform error:', errorMessage);
+        setError(errorMessage);
+      },
 
-    wsRef.current.onmessage = async (event) => {
-      try {
-        const data: WebRTCMessage = JSON.parse(event.data);
-        console.log('📨 Message:', data.type);
-        await handleSignalingMessage(data);
-      } catch (err) {
-        console.error('❌ Message error:', err);
+      onCallStarted: () => {
+        console.log('🎤 Voice call started');
+        setIsStreaming(true);
+        setError(null);
+      },
+
+      onCallEnded: () => {
+        console.log('📴 Voice call ended');
+        setIsStreaming(false);
+      },
+
+      onOrchestratorMessage: (data: any) => {
+        console.log('📨 Orchestrator message:', data);
+        
+        // Handle different message types from orchestrator
+        switch (data.type) {
+          case 'transcription_result':
+          case 'stt_transcript':
+            if (data.text || data.transcript) {
+              const text = data.text || data.transcript;
+              console.log('🎙️ Transcript:', text);
+              setMessages(prev => [...prev, {
+                id: `user-${Date.now()}`,
+                text: text,
+                isUser: true,
+                timestamp: new Date(),
+                isVoice: true,
+              }]);
+            }
+            break;
+            
+          case 'text_response':
+          case 'ai_response':
+            if (data.text || data.message) {
+              const text = data.text || data.message;
+              console.log('🤖 AI Response:', text);
+              setMessages(prev => [...prev, {
+                id: `bot-${Date.now()}`,
+                text: text,
+                isUser: false,
+                timestamp: new Date(),
+              }]);
+            }
+            break;
+            
+          case 'error':
+            console.error('❌ Server error:', data.message);
+            setError(data.message || 'Unknown error');
+            break;
+            
+          default:
+            console.log('📨 Unhandled orchestrator message:', data.type);
+        }
+      },
+
+      onRemoteAudioTrack: (track: RemoteAudioTrack, participant: RemoteParticipant) => {
+        console.log('🎵 Receiving audio from:', participant.identity);
+      },
+
+      onLocalAudioTrack: (track: LocalAudioTrack) => {
+        console.log('🎤 Local audio track created');
+      },
+
+      onParticipantJoined: (participant: RemoteParticipant) => {
+        console.log('👤 Participant joined:', participant.identity);
+      },
+
+      onParticipantLeft: (participant: RemoteParticipant) => {
+        console.log('👤 Participant left:', participant.identity);
       }
     };
 
-    wsRef.current.onerror = (event) => {
-      console.error('❌ WebSocket error details:', event);
-      setError('WebSocket connection error');
-    };
-
-    wsRef.current.onclose = (event) => {
-      console.log('🔌 WebSocket closed - Code:', event.code, 'Reason:', event.reason);
-      console.log('🔌 Close event details:', {
-        code: event.code,
-        reason: event.reason,
-        wasClean: event.wasClean
-      });
-      setIsConnected(false);
-      setSessionId(null);
-      cleanup();
-    };
+    const service = new LiveKitVoiceService(callbacks);
+    
+    // Set auth token if available
+    if (accessToken) {
+      service.setAuthToken(accessToken);
+    }
+    
+    voiceServiceRef.current = service;
+    return service;
   }, [accessToken]);
 
-  const handleSignalingMessage = async (data: WebRTCMessage) => {
-    switch (data.type) {
-      case 'connected':
-        console.log('✅ Session:', data.session_id);
-        setSessionId(data.session_id || null);
-        // Use ICE servers from backend if provided
-        if (data.ice_servers) {
-          rtcConfig.iceServers = data.ice_servers;
-          console.log('🧊 Updated ICE servers from backend:', data.ice_servers);
-        }
-        break;
-
-      case 'webrtc_offer':
-        await handleOffer(data.sdp!);
-        break;
-
-      case 'webrtc_answer':
-        if (data.sdp && peerConnectionRef.current) {
-          console.log('📨 Received WebRTC answer from backend');
-          try {
-            await peerConnectionRef.current.setRemoteDescription(
-              new RTCSessionDescription({ type: 'answer', sdp: data.sdp })
-            );
-            console.log('✅ WebRTC answer processed - connection should establish');
-          } catch (error) {
-            console.error('❌ Failed to process WebRTC answer:', error);
-            setError('Failed to process WebRTC answer');
-          }
-        }
-        break;
-
-      case 'ice_candidate':
-        if (data.candidate && peerConnectionRef.current) {
-          console.log('📡 Received ICE candidate from backend:', data.candidate);
-          try {
-            await peerConnectionRef.current.addIceCandidate(new RTCIceCandidate(data.candidate));
-            console.log('✅ ICE candidate added');
-          } catch (error) {
-            console.error('❌ Failed to add ICE candidate:', error);
-          }
-        }
-        break;
-
-      case 'transcription_result':
-        if (data.text) {
-          console.log('🎙️ Transcript:', data.text);
-          setMessages(prev => [...prev, {
-            id: `user-${Date.now()}`,
-            text: data.text!,
-            isUser: true,
-            timestamp: new Date(),
-            isVoice: true,
-          }]);
-        }
-        break;
-
-      case 'text_response':
-        if (data.text) {
-          console.log('🤖 Response:', data.text);
-          setMessages(prev => [...prev, {
-            id: `bot-${Date.now()}`,
-            text: data.text!,
-            isUser: false,
-            timestamp: new Date(),
-          }]);
-        }
-        break;
-
-      case 'error':
-        console.error('❌ Server error:', data.message);
-        setError(data.message || 'Unknown error');
-        break;
-
-      case 'audio_stream_start':
-        console.log('🎵 Audio stream starting...');
-        break;
-
-      case 'audio_stream_complete':
-        console.log('🎵 Audio stream complete');
-        break;
-
-      default:
-        console.log('📨 Unhandled:', data.type);
-    }
-  };
-
-  const initPeerConnection = useCallback(() => {
-    if (peerConnectionRef.current) {
-      return peerConnectionRef.current;
-    }
-
-    console.log('🎬 Init peer connection with config:', rtcConfig);
-    const pc = new RTCPeerConnection(rtcConfig);
-
-    // Enhanced ICE candidate handling with detailed logging
-    pc.onicecandidate = (event) => {
-      if (event.candidate) {
-        const candidate = event.candidate;
-        
-        console.log('🧊 Frontend ICE Candidate Generated:', {
-          type: candidate.type,           // CRITICAL: should include 'srflx'
-          protocol: candidate.protocol,   
-          address: candidate.address,     // Should show public IP for 'srflx'
-          port: candidate.port,          
-          priority: candidate.priority,
-          sdpMLineIndex: candidate.sdpMLineIndex,
-          foundation: candidate.foundation,
-          full: candidate.candidate       // Full SDP line
-        });
-        
-        // Check if we're getting server reflexive candidates
-        if (candidate.type === 'srflx') {
-          console.log('✅ Got server reflexive candidate - public IP discovered!', candidate.address);
-        } else if (candidate.type === 'host') {
-          console.log('📱 Got host candidate - local IP', candidate.address);
-        } else if (candidate.type === 'relay') {
-          console.log('🔄 Got relay candidate - TURN server', candidate.address);
-        }
-        
-        if (wsRef.current?.readyState === WebSocket.OPEN) {
-          console.log('🧊 Sending ICE candidate to backend');
-          wsRef.current.send(JSON.stringify({
-            type: 'ice_candidate',
-            candidate: event.candidate.toJSON(),
-          }));
-        }
-      } else {
-        console.log('🏁 ICE gathering completed - no more candidates');
-      }
-    };
-
-    // ICE gathering state monitoring
-    pc.onicegatheringstatechange = () => {
-      console.log('🧊 ICE Gathering State:', pc.iceGatheringState);
-    };
-
-    // ICE connection state monitoring
-    pc.oniceconnectionstatechange = () => {
-      console.log('🔌 ICE Connection State:', pc.iceConnectionState);
+  const connect = useCallback(async () => {
+    try {
+      console.log('🔗 Connecting to June platform...');
+      const service = initializeVoiceService();
       
-      if (pc.iceConnectionState === 'connected' || pc.iceConnectionState === 'completed') {
-        console.log('✅ ICE Connection established - audio should flow now');
-        setError(null);
-      } else if (pc.iceConnectionState === 'failed') {
-        console.error('❌ ICE Connection failed:', pc.iceConnectionState);
-        console.error('🔍 This usually means:');
-        console.error('  1. No server reflexive (srflx) candidates were generated');
-        console.error('  2. STUN servers are not accessible');
-        console.error('  3. Network firewall is blocking WebRTC traffic');
-        console.error('  4. NAT type is too restrictive (may need TURN server)');
-        setError('Connection failed - NAT traversal issue');
-      } else if (pc.iceConnectionState === 'disconnected') {
-        console.log('🔌 ICE Connection disconnected');
-        setError('Connection lost');
-      } else if (pc.iceConnectionState === 'checking') {
-        console.log('🔍 ICE Connection checking...');
-        setError(null);
-      }
-    };
-
-    // Overall connection state monitoring
-    pc.onconnectionstatechange = () => {
-      console.log('🔌 Connection State:', pc.connectionState);
+      // Generate a room name and participant name
+      const roomName = `webrtc-room-${Date.now()}`;
+      const participantName = `user-${Date.now()}`;
       
-      if (pc.connectionState === 'connected') {
-        console.log('✅ Peer connection established successfully');
-        setError(null);
-      } else if (pc.connectionState === 'failed') {
-        console.error('❌ Peer connection failed');
-        setError('Peer connection failed');
-        stopStreaming();
-      } else if (pc.connectionState === 'disconnected') {
-        console.log('🔌 Peer connection disconnected');
+      const success = await service.connect(roomName, participantName);
+      if (!success) {
+        throw new Error('Failed to connect to June platform');
       }
-    };
-
-    pc.ontrack = (event) => {
-      console.log('🎵 Remote track received from backend');
-    };
-
-    peerConnectionRef.current = pc;
-    return pc;
-  }, []);
+      
+    } catch (error: any) {
+      console.error('❌ Connection failed:', error);
+      setError(error.message || 'Connection failed');
+      setIsConnected(false);
+    }
+  }, [initializeVoiceService]);
 
   const startStreaming = useCallback(async () => {
     try {
-      console.log('🎤 Starting streaming...');
-
-      if (!isConnected) {
-        throw new Error('Not connected to server');
+      const service = voiceServiceRef.current;
+      if (!service) {
+        throw new Error('Voice service not initialized');
       }
-
-      const stream = await mediaDevices.getUserMedia({
-        audio: {
-          echoCancellation: true,
-          noiseSuppression: true,
-          autoGainControl: true,
-          sampleRate: 48000, // Match backend expectations
-        },
-        video: false,
-      });
-
-      console.log('✅ Got microphone');
       
-      // Log audio stream details for debugging
-      console.log('🎤 Audio stream tracks:', stream.getTracks().map(track => ({
-        kind: track.kind,
-        enabled: track.enabled,
-        readyState: track.readyState,
-        muted: track.muted,
-        id: track.id
-      })));
-
-      localStreamRef.current = stream;
-
-      const pc = initPeerConnection();
-
-      stream.getTracks().forEach(track => {
-        console.log('📤 Adding track to peer connection:', {
-          kind: track.kind,
-          enabled: track.enabled,
-          readyState: track.readyState
-        });
-        pc.addTrack(track, stream);
-      });
-
-      const offer = await pc.createOffer({
-        offerToReceiveAudio: true,
-      });
-      await pc.setLocalDescription(offer);
-
-      console.log('📤 Sending WebRTC offer');
-      console.log('🔍 ICE gathering will start now - watch for ICE candidates...');
+      if (!service.isConnectedToPlatform()) {
+        throw new Error('Not connected to June platform');
+      }
       
-      wsRef.current?.send(JSON.stringify({
-        type: 'webrtc_offer',
-        sdp: offer.sdp,
-      }));
-
-      setIsStreaming(true);
-      setError(null);
-      console.log('✅ Streaming started');
-
-    } catch (err: any) {
-      console.error('❌ Start error:', err);
-      setError(err.message || 'Failed to start streaming');
-      throw err;
+      console.log('🎤 Starting voice streaming...');
+      const success = await service.startVoiceCall();
+      if (!success) {
+        throw new Error('Failed to start voice call');
+      }
+      
+    } catch (error: any) {
+      console.error('❌ Failed to start streaming:', error);
+      setError(error.message || 'Failed to start streaming');
+      setIsStreaming(false);
+      
+      // Show user-friendly error messages
+      if (error.message.includes('permission') || error.message.includes('Permission')) {
+        Alert.alert(
+          'Microphone Permission',
+          'Please grant microphone access to use voice features.',
+          [{ text: 'OK' }]
+        );
+      } else {
+        Alert.alert('Error', error.message || 'Failed to start voice call');
+      }
     }
-  }, [isConnected, initPeerConnection]);
-
-  const stopStreaming = useCallback(() => {
-    console.log('🛑 Stopping...');
-
-    if (localStreamRef.current) {
-      localStreamRef.current.getTracks().forEach((track: any) => {
-        console.log('🛑 Stopping track:', track.kind);
-        track.stop();
-      });
-      localStreamRef.current = null;
-    }
-
-    if (peerConnectionRef.current) {
-      console.log('🛑 Closing peer connection');
-      peerConnectionRef.current.close();
-      peerConnectionRef.current = null;
-    }
-
-    setIsStreaming(false);
-    console.log('✅ Stopped');
   }, []);
 
-  const handleOffer = async (sdp: string) => {
-    const pc = initPeerConnection();
-    await pc.setRemoteDescription(new RTCSessionDescription({ type: 'offer', sdp }));
-    
-    const answer = await pc.createAnswer();
-    await pc.setLocalDescription(answer);
-
-    wsRef.current?.send(JSON.stringify({
-      type: 'webrtc_answer',
-      sdp: answer.sdp,
-    }));
-
-    console.log('📤 Sent WebRTC answer');
-  };
-
-  const cleanup = () => {
-    stopStreaming();
-    if (wsRef.current) {
-      wsRef.current.close();
-      wsRef.current = null;
+  const stopStreaming = useCallback(async () => {
+    try {
+      const service = voiceServiceRef.current;
+      if (service) {
+        console.log('🛑 Stopping voice streaming...');
+        await service.endVoiceCall();
+      }
+    } catch (error: any) {
+      console.error('❌ Failed to stop streaming:', error);
     }
-  };
+  }, []);
 
+  // Cleanup on unmount
   useEffect(() => {
-    return cleanup;
+    return () => {
+      const service = voiceServiceRef.current;
+      if (service) {
+        service.disconnect();
+      }
+    };
   }, []);
 
   return {
+    // Connection state
     isConnected,
     isStreaming,
-    messages,
     sessionId,
     error,
+    
+    // Messages (for chat functionality)
+    messages,
+    
+    // Actions
     connect,
     startStreaming,
     stopStreaming,
+    
+    // Deprecated - for backward compatibility
+    // These were part of the old Janus implementation
+    cleanup: () => {
+      console.warn('useWebRTC.cleanup() is deprecated. Use disconnect() instead.');
+      const service = voiceServiceRef.current;
+      if (service) {
+        service.disconnect();
+      }
+    }
   };
 }

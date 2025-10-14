@@ -60,9 +60,9 @@
           "category": ["BROWSABLE", "DEFAULT"]
         }
       ],
-      "compileSdkVersion": 34,
+      "compileSdkVersion": 35,
       "targetSdkVersion": 34,
-      "buildToolsVersion": "34.0.0"
+      "buildToolsVersion": "35.0.0"
     },
     "plugins": [
       "expo-router",
@@ -73,9 +73,9 @@
             "deploymentTarget": "15.1"
           },
           "android": {
-            "compileSdkVersion": 34,
+            "compileSdkVersion": 35,
             "targetSdkVersion": 34,
-            "buildToolsVersion": "34.0.0"
+            "buildToolsVersion": "35.0.0"
           }
         }
       ],

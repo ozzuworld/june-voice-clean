@@ -1,21 +1,10 @@
-import { Stack } from 'expo-router';
-import React, { useEffect } from 'react';
-import { registerGlobals } from '@livekit/react-native-webrtc';
+import { Tabs } from 'expo-router';
+import React from 'react';
 
-// Register WebRTC globals before any LiveKit usage
-try {
-  registerGlobals();
-  console.log('✅ WebRTC globals registered');
-} catch (e) {
-  console.log('🔴 Failed to register WebRTC globals', e);
-}
-
-export default function TabLayout() {
-  useEffect(() => {
-    // Additional runtime checks can go here if needed
-  }, []);
-
+export default function TabsLayout() {
   return (
-    <Stack screenOptions={{ headerShown: false }} />
+    <Tabs screenOptions={{ headerShown: false }}>
+      <Tabs.Screen name="chat" options={{ title: 'Chat' }} />
+    </Tabs>
   );
 }

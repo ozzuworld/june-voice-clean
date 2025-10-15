@@ -36,7 +36,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [error, setError] = useState<string | null>(null);
 
   const discovery = useAutoDiscovery(`${APP_CONFIG.KEYCLOAK_URL}/realms/${APP_CONFIG.KEYCLOAK.REALM}`);
-  const redirectUri = makeRedirectUri({ scheme: 'june', path: 'auth/callback' });
+  // Use scheme from app.json to avoid linking warnings
+  const redirectUri = makeRedirectUri({ scheme: 'junevoice', path: 'auth/callback' });
 
   const [request, response, promptAsync] = useAuthRequest(
     {

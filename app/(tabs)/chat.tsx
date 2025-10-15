@@ -24,7 +24,6 @@ interface Message {
   isVoice?: boolean;
 }
 
-// Voice Chat UI Component (used inside LiveKitRoom)
 function VoiceChatUI() {
   const room = useRoom();
   if (!room) {
@@ -39,7 +38,6 @@ function VoiceChatUI() {
 
   const participants = useParticipants();
 
-  // Guard against undefined Track.Source
   let micSource: any = undefined;
   try {
     micSource = (Track && (Track as any).Source && (Track as any).Source.Microphone) ? (Track as any).Source.Microphone : undefined;
@@ -47,7 +45,6 @@ function VoiceChatUI() {
     console.log('🔴 Track.Source not available:', e);
   }
 
-  // Only call useTracks if micSource exists
   const tracks = micSource ? useTracks([micSource]) : [];
 
   const [isRecording, setIsRecording] = useState(false);
@@ -66,7 +63,6 @@ function VoiceChatUI() {
     }
   }, [room?.state]);
 
-  // Listen for data messages from AI participant
   useEffect(() => {
     if (!room || !(room as any).on) return;
 
@@ -74,7 +70,6 @@ function VoiceChatUI() {
       try {
         const decoder = new TextDecoder();
         const data = JSON.parse(decoder.decode(payload));
-
         if (data.type === 'ai_response' && data.text) {
           addMessage(data.text, false);
         } else if (data.type === 'stt_transcript' && data.text) {
@@ -154,7 +149,6 @@ function VoiceChatUI() {
 
   return (
     <SafeAreaView style={styles.container}>
-      {/* Header */}
       <View style={styles.header}>
         <Text style={styles.title}>June Voice AI</Text>
         <View style={styles.statusContainer}>
@@ -164,7 +158,6 @@ function VoiceChatUI() {
         </View>
       </View>
 
-      {/* Messages */}
       <FlatList
         data={messages}
         keyExtractor={(item) => item.id}
@@ -180,7 +173,6 @@ function VoiceChatUI() {
         }
       />
 
-      {/* Voice Button */}
       <View style={styles.controls}>
         <TouchableOpacity
           style={[styles.voiceButton, { borderColor: getStatusColor(), backgroundColor: isRecording ? getStatusColor() + '20' : 'transparent' }]}
@@ -207,7 +199,6 @@ export default function ChatScreen() {
   const { liveKitToken, isLoading: tokenLoading, error: tokenError, generateToken } = useLiveKitToken();
   const [lkConnected, setLkConnected] = React.useState(false);
 
-  // Request microphone permission on Android
   useEffect(() => {
     const requestMicPermission = async () => {
       if (Platform.OS === 'android') {
@@ -231,7 +222,6 @@ export default function ChatScreen() {
     requestMicPermission();
   }, []);
 
-  // TLS preflight to surface certificate/handshake issues early
   useEffect(() => {
     const run = async () => {
       try {
@@ -243,15 +233,6 @@ export default function ChatScreen() {
       } catch (err: any) {
         const emsg = err?.message || String(err);
         console.error('🔎 TLS preflight failed:', emsg);
-        if (/trust anchor/i.test(emsg)) {
-          console.warn('🔎 Hint: Android trust store rejected the certificate. Serve full chain (server + intermediate).');
-        }
-        if (/hostname.*not verified/i.test(emsg)) {
-          console.warn('🔎 Hint: Hostname mismatch. Certificate must include livekit.ozzu.world in SAN.');
-        }
-        if (/SSLHandshake|certification path/i.test(emsg)) {
-          console.warn('🔎 Hint: SSL handshake/chain issue. Check intermediates and ALPN.');
-        }
       }
     };
     run();
@@ -305,11 +286,8 @@ export default function ChatScreen() {
     );
   }
 
-  // Ensure signaling path /rtc is used
-  const serverUrl = liveKitToken.livekitUrl.endsWith('/rtc')
-    ? liveKitToken.livekitUrl
-    : `${liveKitToken.livekitUrl}/rtc`;
-
+  // Use base URL, let SDK choose signaling path
+  const serverUrl = liveKitToken.livekitUrl;
   console.log('🎫 Using LiveKit server URL:', serverUrl);
   console.log('🎫 Token length:', liveKitToken.token?.length);
 
@@ -342,23 +320,7 @@ export default function ChatScreen() {
         const msg = e?.message || String(e);
         const cause = (e?.cause && (e.cause.message || String(e.cause))) || null;
         console.error('🔴 LiveKitRoom error (connect):', { msg, cause, url: serverUrl });
-        const hints: string[] = [];
-        if (/trust anchor/i.test(msg) || /trust anchor/i.test(cause || '')) {
-          hints.push('Android trust store rejected the certificate. Ensure full chain is served (server + intermediate).');
-        }
-        if (/SSLHandshake/i.test(msg) || /ssl handshake/i.test(msg) || /SSLHandshake/i.test(cause || '')) {
-          hints.push('SSL handshake failed. Check protocol/ALPN (http/2 or http/1.1) and cipher compatibility.');
-        }
-        if (/unable to find valid certification path/i.test(msg) || /certification path/i.test(cause || '')) {
-          hints.push('Missing intermediate CA. Serve the full chain (bundle) on TLS endpoint.');
-        }
-        if (/hostname.*not verified/i.test(msg) || /hostname.*not verified/i.test(cause || '')) {
-          hints.push('Hostname mismatch. Confirm certificate CN/SAN includes livekit.ozzu.world.');
-        }
-        if (/network.*unreachable|ECONN|ENETUNREACH|ETIMEDOUT|EHOSTUNREACH/i.test(msg + ' ' + (cause || ''))) {
-          hints.push('Network unreachable or timed out. Verify device connectivity to livekit.ozzu.world:443.');
-        }
-        Alert.alert('LiveKit Error', `${msg}${cause ? `\nCause: ${cause}` : ''}${hints.length ? `\n\nHints:\n- ${hints.join('\n- ')}` : ''}`);
+        Alert.alert('LiveKit Error', `${msg}${cause ? `\nCause: ${cause}` : ''}`);
       }}
     >
       {lkConnected ? (

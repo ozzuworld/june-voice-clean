@@ -231,6 +231,32 @@ export default function ChatScreen() {
     requestMicPermission();
   }, []);
 
+  // TLS preflight to surface certificate/handshake issues early
+  useEffect(() => {
+    const run = async () => {
+      try {
+        if (!liveKitToken?.livekitUrl?.startsWith('wss://')) return;
+        const httpsUrl = liveKitToken.livekitUrl.replace('wss://', 'https://');
+        console.log('🔎 TLS preflight to:', httpsUrl);
+        const res = await fetch(httpsUrl, { method: 'HEAD' });
+        console.log('🔎 TLS preflight status:', res.status);
+      } catch (err: any) {
+        const emsg = err?.message || String(err);
+        console.error('🔎 TLS preflight failed:', emsg);
+        if (/trust anchor/i.test(emsg)) {
+          console.warn('🔎 Hint: Android trust store rejected the certificate. Serve full chain (server + intermediate).');
+        }
+        if (/hostname.*not verified/i.test(emsg)) {
+          console.warn('🔎 Hint: Hostname mismatch. Certificate must include livekit.ozzu.world in SAN.');
+        }
+        if (/SSLHandshake|certification path/i.test(emsg)) {
+          console.warn('🔎 Hint: SSL handshake/chain issue. Check intermediates and ALPN.');
+        }
+      }
+    };
+    run();
+  }, [liveKitToken?.livekitUrl]);
+
   useEffect(() => {
     if (isAuthenticated && !liveKitToken && !tokenLoading) {
       generateToken();
@@ -307,9 +333,27 @@ export default function ChatScreen() {
         console.log('🔴 LiveKit disconnected');
         setLkConnected(false);
       }}
-      onError={(e) => {
-        console.error('🔴 LiveKitRoom error:', e);
-        Alert.alert('LiveKit Error', e.message || 'Connection failed');
+      onError={(e: any) => {
+        const msg = e?.message || String(e);
+        const cause = (e?.cause && (e.cause.message || String(e.cause))) || null;
+        const hints: string[] = [];
+        if (/trust anchor/i.test(msg) || /trust anchor/i.test(cause || '')) {
+          hints.push('Android trust store rejected the certificate. Ensure full chain is served (server + intermediate).');
+        }
+        if (/SSLHandshake/i.test(msg) || /ssl handshake/i.test(msg) || /SSLHandshake/i.test(cause || '')) {
+          hints.push('SSL handshake failed. Check protocol/ALPN (http/2 or http/1.1) and cipher compatibility.');
+        }
+        if (/unable to find valid certification path/i.test(msg) || /certification path/i.test(cause || '')) {
+          hints.push('Missing intermediate CA. Serve the full chain (bundle) on TLS endpoint.');
+        }
+        if (/hostname.*not verified/i.test(msg) || /hostname.*not verified/i.test(cause || '')) {
+          hints.push('Hostname mismatch. Confirm certificate CN/SAN includes livekit.ozzu.world.');
+        }
+        if (/network.*unreachable|ECONN|ENETUNREACH|ETIMEDOUT|EHOSTUNREACH/i.test(msg + ' ' + (cause || ''))) {
+          hints.push('Network unreachable or timed out. Verify device connectivity to livekit.ozzu.world:443.');
+        }
+        console.error('🔴 LiveKitRoom error:', { msg, cause, hints, url: liveKitToken.livekitUrl });
+        Alert.alert('LiveKit Error', `${msg}${cause ? `\nCause: ${cause}` : ''}${hints.length ? `\n\nHints:\n- ${hints.join('\n- ')}` : ''}`);
       }}
     >
       {lkConnected ? (

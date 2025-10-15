@@ -6,6 +6,7 @@ interface LiveKitToken {
   token: string;
   roomName: string;
   participantName: string;
+  livekitUrl?: string;
 }
 
 interface Message {
@@ -44,7 +45,6 @@ export function useLiveKitToken() {
       console.log('🎫 [LIVEKIT TOKEN] Request body:', requestBody);
       console.log('🎫 [LIVEKIT TOKEN] Using access token:', accessToken ? `${accessToken.substring(0, 20)}...` : 'none');
 
-      // Call your backend to get LiveKit token
       const response = await fetch(url, {
         method: 'POST',
         headers: {
@@ -75,6 +75,7 @@ export function useLiveKitToken() {
         token: data.accessToken || data.token,
         roomName: data.roomName || requestBody.roomName,
         participantName: data.participantName || requestBody.participantName,
+        livekitUrl: data.livekitUrl, // <-- persist URL for LiveKitRoom
       };
 
       console.log('🎫 [LIVEKIT TOKEN] Parsed token data:', {
@@ -82,6 +83,7 @@ export function useLiveKitToken() {
         tokenLength: tokenData.token?.length,
         roomName: tokenData.roomName,
         participantName: tokenData.participantName,
+        livekitUrl: tokenData.livekitUrl,
       });
 
       setLiveKitToken(tokenData);

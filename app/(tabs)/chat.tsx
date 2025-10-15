@@ -27,6 +27,16 @@ interface Message {
 // Voice Chat UI Component (used inside LiveKitRoom)
 function VoiceChatUI() {
   const room = useRoom();
+  if (!room) {
+    return (
+      <SafeAreaView style={styles.container}>
+        <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}>
+          <Text style={{ color: '#fff' }}>Preparing room…</Text>
+        </View>
+      </SafeAreaView>
+    );
+  }
+
   const participants = useParticipants();
 
   // Guard against undefined Track.Source
@@ -58,7 +68,7 @@ function VoiceChatUI() {
 
   // Listen for data messages from AI participant
   useEffect(() => {
-    if (!room) return;
+    if (!room || !(room as any).on) return;
 
     const handleDataReceived = (payload: Uint8Array) => {
       try {
@@ -75,8 +85,8 @@ function VoiceChatUI() {
       }
     };
 
-    room.on('dataReceived', handleDataReceived);
-    return () => room.off('dataReceived', handleDataReceived);
+    (room as any).on('dataReceived', handleDataReceived);
+    return () => (room as any).off('dataReceived', handleDataReceived);
   }, [room]);
 
   const addMessage = (text: string, isUser: boolean, isVoice = false) => {
@@ -195,6 +205,7 @@ function VoiceChatUI() {
 export default function ChatScreen() {
   const { isAuthenticated, signIn, isLoading: authLoading, error: authError } = useAuth();
   const { liveKitToken, isLoading: tokenLoading, error: tokenError, generateToken } = useLiveKitToken();
+  const [lkConnected, setLkConnected] = React.useState(false);
 
   // Request microphone permission on Android
   useEffect(() => {
@@ -288,14 +299,26 @@ export default function ChatScreen() {
       }}
       audio={true}
       video={false}
-      onConnected={() => console.log('🟢 LiveKit connected!')}
-      onDisconnected={() => console.log('🔴 LiveKit disconnected')}
+      onConnected={() => {
+        console.log('🟢 LiveKit connected!');
+        setLkConnected(true);
+      }}
+      onDisconnected={() => {
+        console.log('🔴 LiveKit disconnected');
+        setLkConnected(false);
+      }}
       onError={(e) => {
         console.error('🔴 LiveKitRoom error:', e);
         Alert.alert('LiveKit Error', e.message || 'Connection failed');
       }}
     >
-      <VoiceChatUI />
+      {lkConnected ? (
+        <VoiceChatUI />
+      ) : (
+        <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}>
+          <Text style={{ color: '#fff' }}>Connecting to room…</Text>
+        </View>
+      )}
     </LiveKitRoom>
   );
 }

@@ -1,104 +1,57 @@
 {
   "expo": {
-    "name": "June Voice App",
-    "slug": "june-voice-app", 
+    "name": "june-voice-clean",
+    "slug": "june-voice-clean",
     "version": "1.0.0",
-    "orientation": "default",
-    "icon": "./assets/images/icon.png",
-    "scheme": "june",
+    "scheme": "junevoice",
+    "orientation": "portrait",
+    "jsEngine": "hermes",
+    "icon": "./assets/icon.png",
     "userInterfaceStyle": "automatic",
-    "newArchEnabled": true,
     "splash": {
-      "image": "./assets/images/splash-icon.png",
+      "image": "./assets/splash.png",
       "resizeMode": "contain",
-      "backgroundColor": "#000000"
+      "backgroundColor": "#ffffff"
     },
+    "updates": {
+      "url": "https://u.expo.dev/00000000-0000-0000-0000-000000000000"
+    },
+    "runtimeVersion": {
+      "policy": "sdkVersion"
+    },
+    "assetBundlePatterns": [
+      "**/*"
+    ],
     "ios": {
-      "supportsTablet": true,
-      "bundleIdentifier": "com.yourcompany.junevoice",
-      "deploymentTarget": "15.1",
-      "infoPlist": {
-        "NSMicrophoneUsageDescription": "June needs microphone access for voice calls and real-time chat with AI.",
-        "NSCameraUsageDescription": "June may need camera access for future video call features.",
-        "NSLocalNetworkUsageDescription": "June needs local network access for peer-to-peer voice connections.",
-        "CFBundleURLTypes": [
-          {
-            "CFBundleURLName": "com.yourcompany.junevoice",
-            "CFBundleURLSchemes": ["june"]
-          }
-        ]
-      }
+      "supportsTablet": true
     },
     "android": {
       "adaptiveIcon": {
-        "foregroundImage": "./assets/images/adaptive-icon.png",
-        "backgroundColor": "#000000"
+        "foregroundImage": "./assets/adaptive-icon.png",
+        "backgroundColor": "#ffffff"
       },
-      "package": "com.kkazuma.junevoiceworkspace",
       "permissions": [
-        "android.permission.RECORD_AUDIO",
-        "android.permission.MODIFY_AUDIO_SETTINGS",
-        "android.permission.INTERNET",
-        "android.permission.ACCESS_NETWORK_STATE",
-        "android.permission.CHANGE_NETWORK_STATE",
-        "android.permission.CAMERA",
-        "android.permission.WAKE_LOCK",
-        "android.permission.ACCESS_WIFI_STATE",
-        "android.permission.BLUETOOTH",
-        "android.permission.BLUETOOTH_ADMIN",
-        "android.permission.BLUETOOTH_CONNECT"
-      ],
-      "intentFilters": [
-        {
-          "action": "VIEW",
-          "autoVerify": true,
-          "data": [
-            {
-              "scheme": "june"
-            }
-          ],
-          "category": ["BROWSABLE", "DEFAULT"]
-        }
-      ],
-      "compileSdkVersion": 35,
-      "targetSdkVersion": 34,
-      "buildToolsVersion": "35.0.0"
+        "RECORD_AUDIO"
+      ]
+    },
+    "web": {
+      "bundler": "metro",
+      "output": "static",
+      "favicon": "./assets/favicon.png"
     },
     "plugins": [
       "expo-router",
       [
-        "expo-build-properties",
-        {
-          "ios": {
-            "deploymentTarget": "15.1"
-          },
-          "android": {
-            "compileSdkVersion": 35,
-            "targetSdkVersion": 34,
-            "buildToolsVersion": "35.0.0"
-          }
-        }
-      ],
-      [
-        "@config-plugins/react-native-webrtc",
-        {
-          "cameraPermission": "Allow June to access camera for video calls (optional)",
-          "microphonePermission": "Allow June to access microphone for voice calls"
-        }
-      ],
-      [
         "@livekit/react-native-expo-plugin",
         {
-          "android": {
-            "audioType": "communication"
-          }
+          "androidCameraPermission": "Allow June Voice to access the camera",
+          "androidRecordAudioPermission": "Allow June Voice to record audio"
         }
-      ],
-      "expo-secure-store"
+      ]
     ],
     "extra": {
       "eas": {
-        "projectId": "your-project-id-here"
+        "projectId": "00000000-0000-0000-0000-000000000000"
       }
     }
   }

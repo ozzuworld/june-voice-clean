@@ -24,6 +24,7 @@ interface AuthContextValue {
   signIn: () => Promise<void>;
   signOut: () => Promise<void>;
   error: string | null;
+  clearError: () => void; // Added missing function
 }
 
 const AuthContext = createContext<AuthContextValue | undefined>(undefined);
@@ -72,15 +73,21 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         const user = JSON.parse(userData);
         const payload = decodeJWT(token);
         
+        // Check if token is still valid (not expired)
         if (payload && payload.exp && payload.exp * 1000 > Date.now()) {
+          console.log('💾 [STORAGE] Valid token found, user authenticated');
           setAccessToken(token);
           setUser(user);
         } else {
+          console.log('💾 [STORAGE] Token expired, clearing stored auth');
           await clearStoredAuth();
         }
+      } else {
+        console.log('💾 [STORAGE] No stored auth found');
       }
     } catch (error) {
-      console.error('Failed to load stored auth:', error);
+      console.error('💾 [STORAGE ERROR] Failed to load stored auth:', error);
+      await clearStoredAuth();
     } finally {
       setIsLoading(false);
     }
@@ -95,6 +102,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         throw new Error('Authentication not ready');
       }
 
+      console.log('🔄 [TOKEN EXCHANGE] Starting token exchange...');
+      
       const tokenRequest = {
         grant_type: 'authorization_code',
         client_id: APP_CONFIG.KEYCLOAK.CLIENT_ID,
@@ -128,6 +137,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         username: payload.preferred_username,
       };
 
+      console.log('👤 [USER] Authentication successful:', { email: user.email, username: user.username });
+
       // Store tokens
       await SecureStore.setItemAsync('accessToken', tokens.access_token);
       await SecureStore.setItemAsync('userData', JSON.stringify(user));
@@ -135,6 +146,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       setAccessToken(tokens.access_token);
       setUser(user);
     } catch (error: any) {
+      console.error('❌ [TOKEN EXCHANGE ERROR]:', error.message);
       setError(error.message || 'Authentication failed');
     } finally {
       setIsLoading(false);
@@ -145,25 +157,39 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     try {
       await SecureStore.deleteItemAsync('accessToken');
       await SecureStore.deleteItemAsync('userData');
+      console.log('💾 [STORAGE] Cleared stored auth');
     } catch (error) {
-      console.error('Failed to clear stored auth:', error);
+      console.error('💾 [STORAGE ERROR] Failed to clear stored auth:', error);
     }
   };
 
   const signIn = useCallback(async () => {
-    if (!request || !discovery) {
-      setError('Authentication service not ready');
-      return;
+    try {
+      console.log('🚀 Starting sign in process...');
+      
+      if (!request || !discovery) {
+        setError('Authentication service not ready');
+        return;
+      }
+      
+      setError(null);
+      console.log('🌐 Opening browser for authentication...');
+      await promptAsync();
+    } catch (error: any) {
+      console.error('❌ Sign in failed:', error);
+      setError(error.message || 'Sign in failed');
     }
-    
-    setError(null);
-    await promptAsync();
   }, [request, discovery, promptAsync]);
 
   const signOut = useCallback(async () => {
+    console.log('🚪 Signing out...');
     await clearStoredAuth();
     setAccessToken(null);
     setUser(null);
+    setError(null);
+  }, []);
+
+  const clearError = useCallback(() => {
     setError(null);
   }, []);
 
@@ -175,6 +201,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     signIn,
     signOut,
     error,
+    clearError, // Added missing function
   };
 
   return (

@@ -1,7 +1,3 @@
-import { registerGlobals } from '@livekit/react-native';
-
-registerGlobals(); // This must be called BEFORE any other LiveKit imports
-
 import React, { useEffect } from 'react';
 import { SafeAreaView, View, Text, TouchableOpacity, StyleSheet } from 'react-native';
 import { useRouter } from 'expo-router';

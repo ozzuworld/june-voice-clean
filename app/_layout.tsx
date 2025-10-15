@@ -1,6 +1,7 @@
 import { Stack } from 'expo-router';
 import React from 'react';
 import { registerGlobals } from '@livekit/react-native-webrtc';
+import { AuthProvider } from '@/hooks/useAuth';
 
 try {
   registerGlobals();
@@ -10,5 +11,9 @@ try {
 }
 
 export default function RootLayout() {
-  return <Stack screenOptions={{ headerShown: false }} />;
+  return (
+    <AuthProvider>
+      <Stack screenOptions={{ headerShown: false }} />
+    </AuthProvider>
+  );
 }

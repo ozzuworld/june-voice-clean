@@ -36,8 +36,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [error, setError] = useState<string | null>(null);
 
   const discovery = useAutoDiscovery(`${APP_CONFIG.KEYCLOAK_URL}/realms/${APP_CONFIG.KEYCLOAK.REALM}`);
-  // Use scheme from app.json to avoid linking warnings
-  const redirectUri = makeRedirectUri({ scheme: 'junevoice', path: 'auth/callback' });
+  // Fixed: Use 'june' scheme to match Keycloak client configuration
+  const redirectUri = makeRedirectUri({ scheme: 'june', path: 'auth/callback' });
 
   const [request, response, promptAsync] = useAuthRequest(
     {
@@ -167,6 +167,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const signIn = useCallback(async () => {
     try {
       console.log('🚀 Starting sign in process...');
+      console.log('🔗 Redirect URI:', redirectUri);
       
       if (!request || !discovery) {
         setError('Authentication service not ready');
@@ -180,7 +181,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       console.error('❌ Sign in failed:', error);
       setError(error.message || 'Sign in failed');
     }
-  }, [request, discovery, promptAsync]);
+  }, [request, discovery, promptAsync, redirectUri]);
 
   const signOut = useCallback(async () => {
     console.log('🚪 Signing out...');

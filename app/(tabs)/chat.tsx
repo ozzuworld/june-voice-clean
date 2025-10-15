@@ -305,12 +305,17 @@ export default function ChatScreen() {
     );
   }
 
-  console.log('🎫 Using LiveKit server URL:', liveKitToken.livekitUrl);
+  // Ensure signaling path /rtc is used
+  const serverUrl = liveKitToken.livekitUrl.endsWith('/rtc')
+    ? liveKitToken.livekitUrl
+    : `${liveKitToken.livekitUrl}/rtc`;
+
+  console.log('🎫 Using LiveKit server URL:', serverUrl);
   console.log('🎫 Token length:', liveKitToken.token?.length);
 
   return (
     <LiveKitRoom
-      serverUrl={liveKitToken.livekitUrl}
+      serverUrl={serverUrl}
       token={liveKitToken.token}
       connect={true}
       options={{
@@ -336,6 +341,7 @@ export default function ChatScreen() {
       onError={(e: any) => {
         const msg = e?.message || String(e);
         const cause = (e?.cause && (e.cause.message || String(e.cause))) || null;
+        console.error('🔴 LiveKitRoom error (connect):', { msg, cause, url: serverUrl });
         const hints: string[] = [];
         if (/trust anchor/i.test(msg) || /trust anchor/i.test(cause || '')) {
           hints.push('Android trust store rejected the certificate. Ensure full chain is served (server + intermediate).');
@@ -352,7 +358,6 @@ export default function ChatScreen() {
         if (/network.*unreachable|ECONN|ENETUNREACH|ETIMEDOUT|EHOSTUNREACH/i.test(msg + ' ' + (cause || ''))) {
           hints.push('Network unreachable or timed out. Verify device connectivity to livekit.ozzu.world:443.');
         }
-        console.error('🔴 LiveKitRoom error:', { msg, cause, hints, url: liveKitToken.livekitUrl });
         Alert.alert('LiveKit Error', `${msg}${cause ? `\nCause: ${cause}` : ''}${hints.length ? `\n\nHints:\n- ${hints.join('\n- ')}` : ''}`);
       }}
     >

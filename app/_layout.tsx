@@ -1,6 +1,6 @@
 import { Stack } from 'expo-router';
 import React from 'react';
-import { registerGlobals } from '@livekit/react-native-webrtc';
+import { registerGlobals } from '@livekit/react-native';
 import { AuthProvider } from '@/hooks/useAuth';
 
 try {

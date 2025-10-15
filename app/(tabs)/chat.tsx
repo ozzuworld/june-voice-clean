@@ -8,6 +8,8 @@ import {
   StyleSheet,
   ActivityIndicator,
   Alert,
+  PermissionsAndroid,
+  Platform,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { LiveKitRoom, useRoom, useParticipants, useTracks, Track } from '@livekit/react-native';
@@ -30,7 +32,7 @@ function VoiceChatUI() {
   // Guard against undefined Track.Source
   let micSource: any = undefined;
   try {
-    micSource = (Track && Track.Source && Track.Source.Microphone) ? Track.Source.Microphone : undefined;
+    micSource = (Track && (Track as any).Source && (Track as any).Source.Microphone) ? (Track as any).Source.Microphone : undefined;
   } catch (e) {
     console.log('🔴 Track.Source not available:', e);
   }
@@ -194,6 +196,30 @@ export default function ChatScreen() {
   const { isAuthenticated, signIn, isLoading: authLoading, error: authError } = useAuth();
   const { liveKitToken, isLoading: tokenLoading, error: tokenError, generateToken } = useLiveKitToken();
 
+  // Request microphone permission on Android
+  useEffect(() => {
+    const requestMicPermission = async () => {
+      if (Platform.OS === 'android') {
+        try {
+          const granted = await PermissionsAndroid.request(
+            PermissionsAndroid.PERMISSIONS.RECORD_AUDIO,
+            {
+              title: 'Microphone Permission',
+              message: 'June Voice needs access to your microphone for voice chat.',
+              buttonNeutral: 'Ask Me Later',
+              buttonNegative: 'Cancel',
+              buttonPositive: 'OK',
+            }
+          );
+          console.log('🎤 Microphone permission:', granted);
+        } catch (err) {
+          console.warn('🎤 Permission error:', err);
+        }
+      }
+    };
+    requestMicPermission();
+  }, []);
+
   useEffect(() => {
     if (isAuthenticated && !liveKitToken && !tokenLoading) {
       generateToken();
@@ -262,6 +288,8 @@ export default function ChatScreen() {
       }}
       audio={true}
       video={false}
+      onConnected={() => console.log('🟢 LiveKit connected!')}
+      onDisconnected={() => console.log('🔴 LiveKit disconnected')}
       onError={(e) => {
         console.error('🔴 LiveKitRoom error:', e);
         Alert.alert('LiveKit Error', e.message || 'Connection failed');

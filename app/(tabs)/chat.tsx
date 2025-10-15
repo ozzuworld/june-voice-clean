@@ -27,7 +27,18 @@ interface Message {
 function VoiceChatUI() {
   const room = useRoom();
   const participants = useParticipants();
-  const tracks = useTracks([Track.Source.Microphone]);
+  
+  // Guard against undefined Track.Source
+  let micSource: any = undefined;
+  try {
+    micSource = (Track && Track.Source && Track.Source.Microphone) ? Track.Source.Microphone : undefined;
+  } catch (e) {
+    console.log('🔴 Track.Source not available:', e);
+  }
+  
+  // Only call useTracks if micSource exists
+  const tracks = micSource ? useTracks([micSource]) : [];
+  
   const [isRecording, setIsRecording] = useState(false);
   const [messages, setMessages] = useState<Message[]>([]);
   const [connectionStatus, setConnectionStatus] = useState<'connecting' | 'connected' | 'disconnected'>('connecting');
@@ -35,8 +46,12 @@ function VoiceChatUI() {
   useEffect(() => {
     if (room?.state === 'connected') {
       setConnectionStatus('connected');
+      console.log('🟢 LiveKit room connected successfully');
     } else if (room?.state === 'disconnected') {
       setConnectionStatus('disconnected');
+      console.log('🔴 LiveKit room disconnected');
+    } else {
+      console.log('🟡 LiveKit room state:', room?.state);
     }
   }, [room?.state]);
 
@@ -84,11 +99,14 @@ function VoiceChatUI() {
       if (isRecording) {
         await room.localParticipant.setMicrophoneEnabled(false);
         setIsRecording(false);
+        console.log('🔇 Microphone disabled');
       } else {
         await room.localParticipant.setMicrophoneEnabled(true);
         setIsRecording(true);
+        console.log('🎤 Microphone enabled');
       }
     } catch (error: any) {
+      console.error('🔴 Microphone toggle error:', error);
       Alert.alert('Error', error.message || 'Failed to toggle microphone');
     }
   };
@@ -228,10 +246,13 @@ export default function ChatScreen() {
     );
   }
 
+  console.log('🎫 Using LiveKit server URL:', liveKitToken.livekitUrl);
+  console.log('🎫 Token length:', liveKitToken.token?.length);
+
   // Main LiveKit room
   return (
     <LiveKitRoom
-      serverUrl={APP_CONFIG.SERVICES.livekit}
+      serverUrl={liveKitToken.livekitUrl || APP_CONFIG.SERVICES.livekit}
       token={liveKitToken.token}
       connect={true}
       options={{
@@ -246,6 +267,10 @@ export default function ChatScreen() {
       }}
       audio={true}
       video={false} // Audio-only for voice chat
+      onError={(e) => {
+        console.error('🔴 LiveKitRoom error:', e);
+        Alert.alert('LiveKit Error', e.message || 'Connection failed');
+      }}
     >
       <VoiceChatUI />
     </LiveKitRoom>

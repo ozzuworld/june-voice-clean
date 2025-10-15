@@ -6,8 +6,10 @@ export default function Index() {
   const router = useRouter();
 
   useEffect(() => {
-    // Navigate to chat tab directly
-    router.replace('/(tabs)/chat');
+    const id = requestAnimationFrame(() => {
+      router.replace('/(tabs)/chat');
+    });
+    return () => cancelAnimationFrame(id);
   }, [router]);
 
   return (

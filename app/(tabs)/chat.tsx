@@ -12,7 +12,7 @@ import {
   Platform,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { LiveKitRoom, useRoom, useParticipants, useTracks, Track, ConnectionState, Room } from '@livekit/react-native';
+import { LiveKitRoom, useRoom, useParticipants, useTracks, Track } from '@livekit/react-native';
 import { useAuth } from '@/hooks/useAuth';
 import { useLiveKitToken } from '@/hooks/useLiveKitToken';
 
@@ -388,41 +388,8 @@ export default function ChatScreen() {
     requestMicPermission();
   }, []);
 
-  useEffect(() => {
-    const run = async () => {
-      try {
-        if (!liveKitToken?.livekitUrl?.startsWith('wss://')) return;
-        const httpsUrl = liveKitToken.livekitUrl.replace('wss://', 'https://');
-        console.log('🔎 [DEBUG] TLS preflight to:', httpsUrl);
-        const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), 5000);
-        
-        const res = await fetch(httpsUrl, { 
-          method: 'HEAD',
-          signal: controller.signal,
-          headers: {
-            'User-Agent': 'june-voice-react-native/1.0'
-          }
-        });
-        clearTimeout(timeoutId);
-        console.log('🔎 [DEBUG] TLS preflight status:', res.status, 'headers:', Object.fromEntries(res.headers.entries()));
-        
-        // Test WebSocket path specifically
-        const wsTestUrl = httpsUrl + '/rtc?protocol=8&sdk=react-native';
-        console.log('🔎 [DEBUG] Testing WebSocket path:', wsTestUrl);
-        const wsTest = await fetch(wsTestUrl, { method: 'GET' });
-        console.log('🔎 [DEBUG] WebSocket path test status:', wsTest.status);
-        
-      } catch (err: any) {
-        const emsg = err?.message || String(err);
-        console.error('🔎 [DEBUG] TLS preflight failed:', emsg);
-        if (err.name === 'AbortError') {
-          console.error('🔎 [DEBUG] TLS preflight timed out after 5 seconds');
-        }
-      }
-    };
-    run();
-  }, [liveKitToken?.livekitUrl]);
+  // Removed TLS preflight and manual WS path probes
+  useEffect(() => {}, [liveKitToken?.livekitUrl]);
 
   useEffect(() => {
     if (isAuthenticated && !liveKitToken && !tokenLoading) {
@@ -431,37 +398,13 @@ export default function ChatScreen() {
     }
   }, [isAuthenticated, liveKitToken, tokenLoading, generateToken]);
 
-  // Connection timeout handler
+  // Removed manual 30s connection timeout handler - rely on SDK's retry/backoff
   useEffect(() => {
-    if (liveKitToken && !lkConnected) {
-      console.log('⏰ [DEBUG] Setting connection timeout (30 seconds)...');
-      const timeout = setTimeout(() => {
-        console.log('⏰ [DEBUG] Connection timeout reached, connection attempts:', connectionAttempts + 1);
-        setConnectionAttempts(prev => prev + 1);
-        if (connectionAttempts >= 2) {
-          Alert.alert(
-            'Connection Timeout', 
-            'Unable to connect to LiveKit server. This appears to be a server-side issue.\n\nDetails:\n- Token generated successfully\n- TLS preflight passed\n- WebSocket connection is timing out\n\nPlease check server logs and configuration.',
-            [
-              { text: 'Retry', onPress: () => {
-                setConnectionAttempts(0);
-                generateToken();
-              }},
-              { text: 'OK' }
-            ]
-          );
-        }
-      }, 30000);
-      
-      setConnectionTimeout(timeout);
-      
-      return () => {
-        if (timeout) {
-          clearTimeout(timeout);
-        }
-      };
+    if (connectionTimeout) {
+      clearTimeout(connectionTimeout);
+      setConnectionTimeout(null);
     }
-  }, [liveKitToken, lkConnected, connectionAttempts]);
+  }, [liveKitToken]);
 
   if (!isAuthenticated) {
     return (
@@ -496,7 +439,7 @@ export default function ChatScreen() {
             <View>
               <Text style={styles.errorText}>{tokenError}</Text>
               <TouchableOpacity style={styles.retryButton} onPress={generateToken}>
-                <Text style={styles.retryButtonText}>Retry</Text>
+                <Text className={styles.retryButtonText}>Retry</Text>
               </TouchableOpacity>
             </View>
           )}
@@ -505,7 +448,6 @@ export default function ChatScreen() {
     );
   }
 
-  // Use base URL, let SDK choose signaling path
   const serverUrl = liveKitToken.livekitUrl;
   console.log('🎫 [DEBUG] Using LiveKit server URL:', serverUrl);
   console.log('🎫 [DEBUG] Token length:', liveKitToken.token?.length);
@@ -517,21 +459,15 @@ export default function ChatScreen() {
       token={liveKitToken.token}
       connect={true}
       options={{
-        // Simplified options for debugging
-        adaptiveStream: false,
-        dynacast: false,
-        // Remove complex publishDefaults temporarily
+        adaptiveStream: true,
+        dynacast: true,
       }}
-      audio={false} // Start with audio disabled to test signaling first
+      audio={false}
       video={false}
       onConnected={() => {
         console.log('🟢 [DEBUG] LiveKit onConnected event fired!');
         console.log('🟢 [DEBUG] Connection successful after', connectionAttempts + 1, 'attempts');
         setLkConnected(true);
-        if (connectionTimeout) {
-          clearTimeout(connectionTimeout);
-          setConnectionTimeout(null);
-        }
       }}
       onDisconnected={(reason?: any) => {
         console.log('🔴 [DEBUG] LiveKit onDisconnected event fired, reason:', reason);
@@ -576,10 +512,13 @@ export default function ChatScreen() {
               Connecting to LiveKit room...
             </Text>
             <Text style={styles.debugConnectionInfo}>
-              🔍 Attempt: {connectionAttempts + 1}/3{'\n'}
-              📡 Server: {serverUrl.replace('wss://', '')}{'\n'}
-              🎫 Token: {liveKitToken.token?.length || 0} chars{'\n'}
-              ⏰ Timeout: 30s
+              🔍 Attempt: {connectionAttempts + 1}/3{'
+'}
+              📡 Server: {serverUrl.replace('wss://', '')}{'
+'}
+              🎫 Token: {liveKitToken.token?.length || 0} chars{'
+'}
+              ⏰ Timeout: managed by SDK
             </Text>
           </View>
         </SafeAreaView>

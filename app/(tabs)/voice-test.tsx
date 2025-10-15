@@ -1,10 +1,3 @@
-/**
- * Voice Test Screen
- * 
- * Updated to use LiveKit + June Platform integration
- * Shows connection status and provides voice call controls
- */
-
 import React from 'react';
 import {
   View,
@@ -13,80 +6,120 @@ import {
   SafeAreaView,
   ScrollView
 } from 'react-native';
-import { JuneVoiceChat } from '../../components/JuneVoiceChat';
+import { useAuth } from '@/hooks/useAuth';
+import { useLiveKitToken } from '@/hooks/useLiveKitToken';
+import { LiveKitRoom, useRoom, useParticipants } from '@livekit/react-native';
+import APP_CONFIG from '@/config/app.config';
+
+function TestInfo() {
+  const room = useRoom();
+  const participants = useParticipants();
+  
+  return (
+    <View style={styles.infoSection}>
+      <Text style={styles.infoTitle}>Connection Status</Text>
+      <View style={styles.infoItem}>
+        <Text style={styles.infoLabel}>Room State:</Text>
+        <Text style={[styles.infoValue, { color: room?.state === 'connected' ? '#28a745' : '#dc3545' }]}>
+          {room?.state || 'disconnected'}
+        </Text>
+      </View>
+      <View style={styles.infoItem}>
+        <Text style={styles.infoLabel}>Participants:</Text>
+        <Text style={styles.infoValue}>{participants.length}</Text>
+      </View>
+      <View style={styles.infoItem}>
+        <Text style={styles.infoLabel}>Room Name:</Text>
+        <Text style={styles.infoValue}>{room?.name || 'none'}</Text>
+      </View>
+    </View>
+  );
+}
 
 export default function VoiceTestScreen() {
+  const { isAuthenticated, user } = useAuth();
+  const { liveKitToken, generateToken, error } = useLiveKitToken();
+  
+  React.useEffect(() => {
+    if (isAuthenticated && !liveKitToken) {
+      generateToken();
+    }
+  }, [isAuthenticated, liveKitToken, generateToken]);
+  
+  if (!isAuthenticated) {
+    return (
+      <SafeAreaView style={styles.container}>
+        <View style={styles.content}>
+          <Text style={styles.title}>Voice Test</Text>
+          <Text style={styles.subtitle}>Please sign in to test voice features</Text>
+        </View>
+      </SafeAreaView>
+    );
+  }
+
+  if (!liveKitToken) {
+    return (
+      <SafeAreaView style={styles.container}>
+        <View style={styles.content}>
+          <Text style={styles.title}>Voice Test</Text>
+          <Text style={styles.subtitle}>Getting LiveKit token...</Text>
+          {error && <Text style={styles.errorText}>{error}</Text>}
+        </View>
+      </SafeAreaView>
+    );
+  }
+
   return (
     <SafeAreaView style={styles.container}>
       <ScrollView contentContainerStyle={styles.content}>
-        <Text style={styles.title}>June Voice Platform Test</Text>
-        <Text style={styles.subtitle}>
-          Testing LiveKit + June Orchestrator Integration
-        </Text>
+        <Text style={styles.title}>June Voice Test</Text>
+        <Text style={styles.subtitle}>LiveKit Connection Test</Text>
         
-        {/* Main Voice Chat Component */}
-        <JuneVoiceChat
-          roomName="voice-test-room"
-          participantName="test-user"
-          onCallStateChanged={(inCall) => {
-            console.log(`🎤 Call state changed: ${inCall ? 'IN CALL' : 'NOT IN CALL'}`);
-          }}
-          onAiResponse={(response) => {
-            console.log('🤖 AI Response:', response);
-          }}
-          onError={(error) => {
-            console.error('❌ Voice Test Error:', error);
-          }}
-        />
+        <LiveKitRoom
+          serverUrl={APP_CONFIG.SERVICES.livekit}
+          token={liveKitToken.token}
+          connect={true}
+          audio={true}
+          video={false}
+        >
+          <TestInfo />
+        </LiveKitRoom>
         
-        {/* Test Information */}
+        {/* Configuration Info */}
         <View style={styles.infoSection}>
           <Text style={styles.infoTitle}>Test Configuration</Text>
           <View style={styles.infoItem}>
             <Text style={styles.infoLabel}>Backend:</Text>
-            <Text style={styles.infoValue}>api.allsafe.world</Text>
+            <Text style={styles.infoValue}>api.ozzu.world</Text>
           </View>
           <View style={styles.infoItem}>
             <Text style={styles.infoLabel}>LiveKit:</Text>
-            <Text style={styles.infoValue}>livekit.allsafe.world</Text>
+            <Text style={styles.infoValue}>livekit.ozzu.world</Text>
           </View>
           <View style={styles.infoItem}>
-            <Text style={styles.infoLabel}>TURN Server:</Text>
-            <Text style={styles.infoValue}>34.59.53.188:3478</Text>
-          </View>
-          <View style={styles.infoItem}>
-            <Text style={styles.infoLabel}>Room:</Text>
-            <Text style={styles.infoValue}>voice-test-room</Text>
+            <Text style={styles.infoLabel}>User:</Text>
+            <Text style={styles.infoValue}>{user?.email || 'unknown'}</Text>
           </View>
         </View>
         
         {/* Instructions */}
         <View style={styles.instructionsSection}>
-          <Text style={styles.instructionsTitle}>How to Test</Text>
+          <Text style={styles.instructionsTitle}>Testing Notes</Text>
           <Text style={styles.instructionText}>
-            1. 🔗 Tap "Connect to June" to establish connection
+            ✅ This test verifies your LiveKit connection
           </Text>
           <Text style={styles.instructionText}>
-            2. 🎤 Tap "Start Call" to begin voice session
+            ✅ Room state should show "connected"
           </Text>
           <Text style={styles.instructionText}>
-            3. 📱 Grant microphone permissions when prompted
-          </Text>
-          <Text style={styles.instructionText}>
-            4. 🤖 Try "Send AI Message" to test orchestrator
-          </Text>
-          <Text style={styles.instructionText}>
-            5. 🔇 Use "Mute/Unmute" to control audio
-          </Text>
-          <Text style={styles.instructionText}>
-            6. 📴 "End Call" when finished testing
+            ✅ Go to Chat tab for full voice interface
           </Text>
           
           <View style={styles.noteSection}>
-            <Text style={styles.noteTitle}>📝 Note:</Text>
+            <Text style={styles.noteTitle}>📝 Simplified Architecture:</Text>
             <Text style={styles.noteText}>
-              This test connects to your June backend with LiveKit WebRTC. 
-              Make sure your backend is running with the LiveKit token endpoint added.
+              This app now uses LiveKit's built-in components instead of custom WebRTC management. 
+              Much simpler and more reliable!
             </Text>
           </View>
         </View>
@@ -116,6 +149,11 @@ const styles = StyleSheet.create({
     marginBottom: 30,
     color: '#666',
     fontStyle: 'italic',
+  },
+  errorText: {
+    color: '#dc3545',
+    textAlign: 'center',
+    marginTop: 10,
   },
   infoSection: {
     backgroundColor: 'white',
@@ -179,20 +217,20 @@ const styles = StyleSheet.create({
   noteSection: {
     marginTop: 20,
     padding: 15,
-    backgroundColor: '#E3F2FD',
+    backgroundColor: '#E8F5E8',
     borderRadius: 8,
     borderLeftWidth: 4,
-    borderLeftColor: '#2196F3',
+    borderLeftColor: '#28a745',
   },
   noteTitle: {
     fontSize: 16,
     fontWeight: '600',
-    color: '#1976D2',
+    color: '#155724',
     marginBottom: 8,
   },
   noteText: {
     fontSize: 14,
-    color: '#1565C0',
+    color: '#155724',
     lineHeight: 20,
   },
 });

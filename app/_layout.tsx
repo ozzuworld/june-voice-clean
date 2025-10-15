@@ -1,7 +1,3 @@
-// ============================================================================
-// FILE 2: apps/expo/app/_layout.tsx
-// REPLACE ENTIRE FILE
-// ============================================================================
 import { Stack } from 'expo-router';
 import React from 'react';
 import { AuthProvider } from '@/hooks/useAuth';

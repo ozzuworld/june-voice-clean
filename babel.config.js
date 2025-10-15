@@ -3,23 +3,17 @@ module.exports = function (api) {
   return {
     presets: ['babel-preset-expo'],
     plugins: [
+      'expo-router/babel',
       [
         'module-resolver',
         {
           root: ['./'],
           alias: {
             '@': './',
-            '@/components': './components',
-            '@/hooks': './hooks',
-            '@/services': './services',
-            '@/types': './types',
-            '@/config': './config',
-            '@/utils': './utils',
-            '@/constants': './constants',
           },
+          extensions: ['.js', '.jsx', '.ts', '.tsx', '.json'],
         },
       ],
-      // React Native Reanimated plugin must be listed last
       'react-native-reanimated/plugin',
     ],
   };

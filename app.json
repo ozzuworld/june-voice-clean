@@ -3,7 +3,7 @@
     "name": "june-voice-clean",
     "slug": "june-voice-clean",
     "version": "1.0.0",
-    "scheme": "junevoice",
+    "scheme": "june",
     "orientation": "portrait",
     "jsEngine": "hermes",
     "icon": "./assets/icon.png",

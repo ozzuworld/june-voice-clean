@@ -1,54 +1,59 @@
 {
   "expo": {
-    "name": "june-voice-clean",
+    "name": "June Voice Assistant",
     "slug": "june-voice-clean",
     "version": "1.0.0",
-    "scheme": "june",
     "orientation": "portrait",
-    "jsEngine": "hermes",
+    "icon": "./assets/icon.png",
     "userInterfaceStyle": "automatic",
-    "updates": {
-      "url": "https://u.expo.dev/00000000-0000-0000-0000-000000000000"
-    },
-    "runtimeVersion": {
-      "policy": "sdkVersion"
+    "splash": {
+      "image": "./assets/splash.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#0B1426"
     },
     "assetBundlePatterns": [
       "**/*"
     ],
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "com.kkazuma.junevoiceclean",
       "infoPlist": {
-        "NSCameraUsageDescription": "This app uses the camera for video calls.",
-        "NSMicrophoneUsageDescription": "This app uses the microphone for voice calls."
+        "NSCameraUsageDescription": "June Voice Assistant uses your camera for video calls",
+        "NSMicrophoneUsageDescription": "June Voice Assistant uses your microphone for voice communication",
+        "UIBackgroundModes": ["voip", "audio"]
       }
     },
     "android": {
-      "package": "com.kkazuma.junevoiceclean",
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/adaptive-icon.png",
+        "backgroundColor": "#0B1426"
+      },
       "permissions": [
-        "RECORD_AUDIO",
-        "CAMERA",
-        "MODIFY_AUDIO_SETTINGS",
-        "BLUETOOTH",
-        "BLUETOOTH_CONNECT",
-        "INTERNET",
-        "ACCESS_NETWORK_STATE"
+        "android.permission.CAMERA",
+        "android.permission.RECORD_AUDIO",
+        "android.permission.MODIFY_AUDIO_SETTINGS",
+        "android.permission.BLUETOOTH",
+        "android.permission.BLUETOOTH_ADMIN",
+        "android.permission.BLUETOOTH_CONNECT",
+        "android.permission.WAKE_LOCK",
+        "android.permission.INTERNET",
+        "android.permission.ACCESS_NETWORK_STATE"
       ]
     },
     "web": {
-      "bundler": "metro",
-      "output": "static"
+      "favicon": "./assets/favicon.png"
     },
     "plugins": [
-      "expo-router",
       "@livekit/react-native-expo-plugin",
-      "@config-plugins/react-native-webrtc"
+      "@config-plugins/react-native-webrtc",
+      [
+        "@livekit/react-native-expo-plugin",
+        {
+          "android": {
+            "audioType": "communication"
+          }
+        }
+      ]
     ],
-    "extra": {
-      "eas": {
-        "projectId": "00000000-0000-0000-0000-000000000000"
-      }
-    }
+    "scheme": "june-voice-clean"
   }
 }

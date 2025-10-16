@@ -74,6 +74,11 @@ function VoiceChatUI() {
     canSubscribe: false
   });
 
+  useEffect(() => {
+    console.log('🐛 [TRACE] VoiceChatUI mounted');
+    return () => console.log('🐛 [TRACE] VoiceChatUI unmounted');
+  }, []);
+
   // Enhanced room state monitoring
   useEffect(() => {
     if (!room) return;
@@ -90,7 +95,7 @@ function VoiceChatUI() {
         tracksCount: tracks.length,
         lastError: null,
         reconnectAttempts: 0,
-        signalConnected: room.engine?.connectedServerAddr ? true : false,
+        signalConnected: (room as any)?.engine?.connectedServerAddr ? true : false,
         canPublish: room.localParticipant?.permissions?.canPublish || false,
         canSubscribe: room.localParticipant?.permissions?.canSubscribe || false
       };
@@ -98,7 +103,6 @@ function VoiceChatUI() {
       console.log('🔍 [DEBUG] Updated debug info:', newDebugInfo);
     };
 
-    // Monitor connection state changes
     const handleStateChange = () => {
       console.log('🔍 [DEBUG] Room state changed to:', room.state);
       if (room.state === 'connected') {
@@ -106,7 +110,7 @@ function VoiceChatUI() {
         console.log('🟢 [DEBUG] LiveKit room connected successfully');
         console.log('🔍 [DEBUG] Local participant identity:', room.localParticipant?.identity);
         console.log('🔍 [DEBUG] Local participant permissions:', room.localParticipant?.permissions);
-        console.log('🔍 [DEBUG] Engine connected server:', room.engine?.connectedServerAddr);
+        console.log('🔍 [DEBUG] Engine connected server:', (room as any)?.engine?.connectedServerAddr);
       } else if (room.state === 'disconnected') {
         setConnectionStatus('disconnected');
         console.log('🔴 [DEBUG] LiveKit room disconnected');
@@ -119,7 +123,6 @@ function VoiceChatUI() {
       updateDebugInfo();
     };
 
-    // Monitor participant changes
     const handleParticipantConnected = (participant: any) => {
       console.log('🟢 [DEBUG] Participant connected:', participant.identity);
       updateDebugInfo();
@@ -130,7 +133,6 @@ function VoiceChatUI() {
       updateDebugInfo();
     };
 
-    // Monitor track changes
     const handleTrackSubscribed = (track: any, participant: any) => {
       console.log('🟢 [DEBUG] Track subscribed:', track.kind, 'from', participant.identity);
       updateDebugInfo();
@@ -141,46 +143,33 @@ function VoiceChatUI() {
       updateDebugInfo();
     };
 
-    // Monitor connection quality
     const handleConnectionQualityChanged = (quality: any, participant: any) => {
       console.log('📊 [DEBUG] Connection quality changed:', quality, 'for', participant.identity);
       updateDebugInfo();
     };
 
-    // Set up event listeners
-    if (room.on) {
+    if ((room as any).on) {
       console.log('🔍 [DEBUG] Setting up room event listeners...');
-      
-      // Connection events
       room.on('connected', handleStateChange);
       room.on('disconnected', handleStateChange);
       room.on('reconnecting', handleStateChange);
       room.on('reconnected', handleStateChange);
-      
-      // Participant events
       room.on('participantConnected', handleParticipantConnected);
       room.on('participantDisconnected', handleParticipantDisconnected);
-      
-      // Track events
       room.on('trackSubscribed', handleTrackSubscribed);
       room.on('trackUnsubscribed', handleTrackUnsubscribed);
-      
-      // Connection quality
       room.on('connectionQualityChanged', handleConnectionQualityChanged);
-
-      // Error events
       room.on('error', (error: any) => {
         console.error('🔴 [DEBUG] Room error event:', error);
         setDebugInfo(prev => ({ ...prev, lastError: error?.message || String(error) }));
       });
     }
 
-    // Initial update
     handleStateChange();
 
     return () => {
       console.log('🔍 [DEBUG] Cleaning up room event listeners...');
-      if (room.off) {
+      if ((room as any).off) {
         room.off('connected', handleStateChange);
         room.off('disconnected', handleStateChange);
         room.off('reconnecting', handleStateChange);
@@ -196,7 +185,7 @@ function VoiceChatUI() {
 
   useEffect(() => {
     if (!room || !(room as any).on) return;
-
+    console.log('🐛 [TRACE] Setting up dataReceived listener');
     const handleDataReceived = (payload: Uint8Array) => {
       try {
         const decoder = new TextDecoder();
@@ -304,7 +293,7 @@ function VoiceChatUI() {
         <View style={styles.statusContainer}>
           <View style={[styles.statusDot, { backgroundColor: getStatusColor() }]} />
           <Text style={styles.statusText}>{getStatusText()}</Text>
-          <Text style={styles.participantCount}>{participants.length} participants</Text>
+          <Text style={styles.participantCount}>{/* count rendered in VoiceChatUI */}</Text>
         </View>
         
         {/* DEBUG INFO PANEL */}
@@ -365,6 +354,11 @@ export default function ChatScreen() {
   const [connectionAttempts, setConnectionAttempts] = React.useState(0);
 
   useEffect(() => {
+    console.log('🐛 [TRACE] ChatScreen mounted');
+    return () => console.log('🐛 [TRACE] ChatScreen unmounted');
+  }, []);
+
+  useEffect(() => {
     const requestMicPermission = async () => {
       if (Platform.OS === 'android') {
         try {
@@ -387,16 +381,23 @@ export default function ChatScreen() {
     requestMicPermission();
   }, []);
 
-  // Add trace logs right before rendering LiveKitRoom
+  // Trace token lifecycle
   useEffect(() => {
-    if (!liveKitToken) return;
-    console.log('🐛 [TRACE] Token ready for LiveKitRoom:', {
-      serverUrl: liveKitToken.livekitUrl,
-      tokenPreview: (liveKitToken.token || '').substring(0, 30) + '...'
-    });
-  }, [liveKitToken]);
+    console.log('🐛 [TRACE] tokenLoading:', tokenLoading, 'hasToken?', !!liveKitToken);
+  }, [tokenLoading, liveKitToken]);
+
+  // Branch trace logs
+  const renderBranch = (name: string) => console.log('🐛 [TRACE] branch:', name);
+
+  // Force connect button helper
+  const ForceConnect = () => (
+    <TouchableOpacity style={styles.retryButton} onPress={generateToken}>
+      <Text style={styles.retryButtonText}>Force Connect</Text>
+    </TouchableOpacity>
+  );
 
   if (!isAuthenticated) {
+    renderBranch('unauthenticated');
     return (
       <SafeAreaView style={styles.container}>
         <View style={styles.authContainer}>
@@ -419,7 +420,15 @@ export default function ChatScreen() {
     );
   }
 
+  useEffect(() => {
+    if (isAuthenticated && !liveKitToken && !tokenLoading) {
+      console.log('🎫 [DEBUG] Generating LiveKit token...');
+      generateToken();
+    }
+  }, [isAuthenticated, liveKitToken, tokenLoading, generateToken]);
+
   if (tokenLoading || !liveKitToken) {
+    renderBranch('loading token');
     return (
       <SafeAreaView style={styles.container}>
         <View style={styles.loadingContainer}>
@@ -428,22 +437,42 @@ export default function ChatScreen() {
           {tokenError && (
             <View>
               <Text style={styles.errorText}>{tokenError}</Text>
-              <TouchableOpacity style={styles.retryButton} onPress={generateToken}>
-                <Text style={styles.retryButtonText}>Retry</Text>
-              </TouchableOpacity>
+              <ForceConnect />
             </View>
           )}
+          {!tokenError && <ForceConnect />}
         </View>
       </SafeAreaView>
     );
   }
 
   const serverUrl = liveKitToken.livekitUrl;
-  console.log('🐛 [TRACE] About to render LiveKitRoom with:', {
+  console.log('🐛 [TRACE] Token ready for LiveKitRoom:', {
     serverUrl,
-    tokenPreview: (liveKitToken.token || '').substring(0, 30) + '...',
-    connectFlag: true,
+    tokenPreview: (liveKitToken.token || '').substring(0, 30) + '...'
   });
+  console.log('🐛 [TRACE] branch: rendering LiveKitRoom');
+
+  // Direct SDK connect test button
+  const DirectConnectTest = () => (
+    <TouchableOpacity
+      style={[styles.retryButton, { marginTop: 8 }]}
+      onPress={async () => {
+        try {
+          console.log('🐛 [TRACE] direct connect test start');
+          const { Room } = await import('livekit-client');
+          const r = new Room();
+          await r.connect(serverUrl!, liveKitToken.token!);
+          console.log('🟢 [SUCCESS] direct connect ok');
+          await r.disconnect();
+        } catch (e: any) {
+          console.log('🚨 [ERROR] direct connect failed:', e?.message || String(e));
+        }
+      }}
+    >
+      <Text style={styles.retryButtonText}>Direct Connect Test</Text>
+    </TouchableOpacity>
+  );
 
   return (
     <LiveKitRoom
@@ -453,8 +482,6 @@ export default function ChatScreen() {
       options={{
         adaptiveStream: true,
         dynacast: true,
-        // @ts-ignore - some SDKs accept logLevel; safe to include for trace
-        logLevel: 'debug',
       }}
       audio={false}
       video={false}
@@ -496,12 +523,13 @@ export default function ChatScreen() {
             </Text>
             <Text style={styles.debugConnectionInfo}>
               {[
-                `🔍 Attempt: 1`,
+                `🔍 Attempt: ${connectionAttempts + 1}`,
                 `📡 Server: ${serverUrl.replace('wss://', '')}`,
                 `🎫 Token: ${(liveKitToken.token?.length || 0)} chars`,
                 `🧪 Trace: enabled`,
               ].join('\n')}
             </Text>
+            <DirectConnectTest />
           </View>
         </SafeAreaView>
       )}

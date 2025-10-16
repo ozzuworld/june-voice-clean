@@ -1,47 +1,24 @@
 {
   "expo": {
-    "name": "June Voice Assistant",
+    "name": "June Voice Minimal",
     "slug": "june-voice-clean",
     "version": "1.0.0",
     "orientation": "portrait",
     "userInterfaceStyle": "automatic",
-    "assetBundlePatterns": [
-      "**/*"
-    ],
-    "ios": {
-      "supportsTablet": true,
-      "infoPlist": {
-        "NSCameraUsageDescription": "June Voice Assistant uses your camera for video calls",
-        "NSMicrophoneUsageDescription": "June Voice Assistant uses your microphone for voice communication",
-        "UIBackgroundModes": ["voip", "audio"]
-      }
-    },
     "android": {
-      "adaptiveIcon": {
-        "backgroundColor": "#0B1426"
-      },
       "permissions": [
-        "android.permission.CAMERA",
         "android.permission.RECORD_AUDIO",
         "android.permission.MODIFY_AUDIO_SETTINGS",
-        "android.permission.BLUETOOTH",
-        "android.permission.BLUETOOTH_ADMIN",
-        "android.permission.BLUETOOTH_CONNECT",
-        "android.permission.WAKE_LOCK",
         "android.permission.INTERNET",
         "android.permission.ACCESS_NETWORK_STATE"
-      ]
+      ],
+      "adaptiveIcon": { "backgroundColor": "#0B1426" }
     },
     "plugins": [
       [
         "@livekit/react-native-expo-plugin",
-        {
-          "android": {
-            "audioType": "communication"
-          }
-        }
+        { "android": { "audioType": "communication" } }
       ]
-    ],
-    "scheme": "june-voice-clean"
+    ]
   }
 }

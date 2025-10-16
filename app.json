@@ -18,7 +18,11 @@
     ],
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "com.kkazuma.junevoiceclean"
+      "bundleIdentifier": "com.kkazuma.junevoiceclean",
+      "infoPlist": {
+        "NSCameraUsageDescription": "This app uses the camera for video calls.",
+        "NSMicrophoneUsageDescription": "This app uses the microphone for voice calls."
+      }
     },
     "android": {
       "package": "com.kkazuma.junevoiceclean",
@@ -27,7 +31,9 @@
         "CAMERA",
         "MODIFY_AUDIO_SETTINGS",
         "BLUETOOTH",
-        "BLUETOOTH_CONNECT"
+        "BLUETOOTH_CONNECT",
+        "INTERNET",
+        "ACCESS_NETWORK_STATE"
       ]
     },
     "web": {
@@ -36,13 +42,8 @@
     },
     "plugins": [
       "expo-router",
-      [
-        "@livekit/react-native-expo-plugin",
-        {
-          "androidCameraPermission": "Allow June Voice to access the camera",
-          "androidRecordAudioPermission": "Allow June Voice to record audio"
-        }
-      ]
+      "@livekit/react-native-expo-plugin",
+      "@config-plugins/react-native-webrtc"
     ],
     "extra": {
       "eas": {

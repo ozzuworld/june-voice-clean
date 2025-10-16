@@ -1,8 +1,27 @@
-// index.js - Entry point with LiveKit globals registration
+// index.js - Entry point with LiveKit globals registration and Hermes polyfills
 
+import 'react-native-get-random-values';
+import { TextEncoder, TextDecoder } from 'text-encoding';
+import { Buffer } from 'buffer';
 import { registerGlobals } from '@livekit/react-native';
 import { registerRootComponent } from 'expo';
 import App from './App';
+
+// Polyfill TextEncoder/TextDecoder for Hermes
+if (typeof global.TextEncoder === 'undefined') {
+  // @ts-ignore
+  global.TextEncoder = TextEncoder;
+}
+if (typeof global.TextDecoder === 'undefined') {
+  // @ts-ignore
+  global.TextDecoder = TextDecoder;
+}
+
+// Polyfill Buffer if missing
+if (typeof global.Buffer === 'undefined') {
+  // @ts-ignore
+  global.Buffer = Buffer;
+}
 
 // CRITICAL: Register LiveKit globals before anything else
 registerGlobals();

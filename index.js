@@ -1,13 +1,9 @@
 import { registerGlobals } from '@livekit/react-native';
-import 'expo/build/Expo.fx';
+import { registerRootComponent } from 'expo';
+import App from './App';
 
-// Register LiveKit WebRTC globals before app code runs
-try {
-  registerGlobals();
-  console.log('✅ LiveKit WebRTC globals registered');
-} catch (e) {
-  console.log('⚠️ Failed to register LiveKit globals', e);
-}
+// Register the globals before anything else
+registerGlobals();
 
-// Keep existing Expo Router entry
-import 'expo-router/entry';
+// Register the main application component
+registerRootComponent(App);

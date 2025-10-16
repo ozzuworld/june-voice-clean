@@ -161,23 +161,8 @@ export default function ChatScreen() {
         console.log('🔌 Token preview:', tokenData.token.substring(0, 50) + '...');
         console.log('🔌 Token end:', '...' + tokenData.token.substring(tokenData.token.length - 50));
         
-        // Test WebSocket connectivity first
-        console.log('🧪 Testing WebSocket connection...');
-        try {
-          const testWs = new WebSocket(tokenData.url);
-          testWs.onopen = () => {
-            console.log('✅ WebSocket test: Connection opened');
-            testWs.close();
-          };
-          testWs.onerror = (e) => {
-            console.log('❌ WebSocket test error:', e);
-          };
-          testWs.onclose = (e) => {
-            console.log('🔌 WebSocket test closed:', e.code, e.reason);
-          };
-        } catch (wsError) {
-          console.log('❌ WebSocket test failed:', wsError);
-        }
+        // REMOVED: WebSocket connectivity test that was causing the HTTP 101/200 error
+        // The LiveKit SDK handles WebSocket connections properly with authentication
         
         // Add timeout to detect hanging connection
         const connectionTimeout = setTimeout(() => {

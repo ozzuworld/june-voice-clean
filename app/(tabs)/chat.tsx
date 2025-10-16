@@ -12,7 +12,7 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { AudioSession } from '@livekit/react-native';
-import { Room, RoomEvent, Track } from 'livekit-client';
+import { Room, RoomEvent, Track, setLogLevel, LogLevel } from 'livekit-client';
 import { useAuth } from '@/hooks/useAuth';
 import APP_CONFIG from '@/config/app.config';
 
@@ -92,6 +92,9 @@ export default function ChatScreen() {
 
     const connect = async () => {
       try {
+        // Enable verbose LiveKit SDK logs
+        setLogLevel(LogLevel.debug);
+
         console.log('🔌 Starting audio session...');
         await AudioSession.startAudioSession();
         
@@ -105,8 +108,8 @@ export default function ChatScreen() {
           setIsConnected(true);
         });
 
-        room.on(RoomEvent.Disconnected, () => {
-          console.log('🔌 Room disconnected');
+        room.on(RoomEvent.Disconnected, (reason) => {
+          console.log('🔌 Room disconnected', reason);
           setIsConnected(false);
           setIsRecording(false);
         });
@@ -149,34 +152,28 @@ export default function ChatScreen() {
           }
         });
 
-        // Add error handler
-        room.on(RoomEvent.Disconnected, (reason) => {
-          console.log('🔌 Room disconnected. Reason:', reason);
-          setIsConnected(false);
-          setIsRecording(false);
-        });
+        // DEBUG dump of URL/token
+        console.log('🔍 [DEBUG] About to connect to LiveKit');
+        console.log('🔍 [DEBUG] URL:', tokenData.url);
+        console.log('🔍 [DEBUG] Token length:', tokenData.token.length);
+        console.log('🔍 [DEBUG] Token starts with:', tokenData.token.substring(0, 20));
 
-        console.log('🔌 Connecting to room...', tokenData.url);
-        console.log('🔌 Token length:', tokenData.token.length);
-        console.log('🔌 Token preview:', tokenData.token.substring(0, 50) + '...');
-        console.log('🔌 Token end:', '...' + tokenData.token.substring(tokenData.token.length - 50));
-        
-        // REMOVED: WebSocket connectivity test that was causing the HTTP 101/200 error
-        // The LiveKit SDK handles WebSocket connections properly with authentication
-        
         // Add timeout to detect hanging connection
         const connectionTimeout = setTimeout(() => {
-          console.log('⏰ Connection timeout after 10 seconds');
+          console.log('⏰ Connection timeout after 15 seconds');
           console.log('⏰ Room state at timeout:', room?.state);
           Alert.alert('Connection Timeout', 'Failed to connect to LiveKit server. Check logs for details.');
-        }, 10000);
+        }, 15000);
 
         try {
           console.log('🔌 Starting room.connect()...');
-          await room.connect(tokenData.url, tokenData.token, {
-            autoSubscribe: true,
-            adaptiveStream: false,
-          });
+          await Promise.race([
+            room.connect(tokenData.url, tokenData.token, {
+              autoSubscribe: true,
+              adaptiveStream: false,
+            }),
+            new Promise((_, reject) => setTimeout(() => reject(new Error('connect() timed out')), 15000)),
+          ]);
           clearTimeout(connectionTimeout);
           console.log('✅ Connected successfully');
         } catch (error: any) {

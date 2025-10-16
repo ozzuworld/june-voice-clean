@@ -1,7 +1,7 @@
+// app/_layout.tsx - Simplified without auth for testing
 import { Stack } from 'expo-router';
-import React, { useEffect } from 'react';
+import { useEffect } from 'react';
 import { registerGlobals } from '@livekit/react-native';
-import { AuthProvider } from '@/hooks/useAuth';
 
 // Import WebRTC from the LiveKit package
 import '@livekit/react-native-webrtc';
@@ -29,9 +29,5 @@ export default function RootLayout() {
     }
   }, []);
 
-  return (
-    <AuthProvider>
-      <Stack screenOptions={{ headerShown: false }} />
-    </AuthProvider>
-  );
+  return <Stack screenOptions={{ headerShown: false }} />;
 }

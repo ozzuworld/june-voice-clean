@@ -1,33 +1,54 @@
+// app/index.tsx - Skip auth, go straight to chat for testing
 import React, { useEffect } from 'react';
-import { SafeAreaView, View, Text, TouchableOpacity, StyleSheet } from 'react-native';
+import { SafeAreaView, View, Text, StyleSheet } from 'react-native';
 import { useRouter } from 'expo-router';
 
 export default function Index() {
   const router = useRouter();
 
   useEffect(() => {
-    const id = requestAnimationFrame(() => {
+    // Automatically navigate to chat after a short delay
+    const timer = setTimeout(() => {
+      console.log('🚀 [INDEX] Navigating to chat...');
       router.replace('/(tabs)/chat');
-    });
-    return () => cancelAnimationFrame(id);
+    }, 500);
+
+    return () => clearTimeout(timer);
   }, [router]);
 
   return (
     <SafeAreaView style={styles.container}>
-      <View style={styles.inner}>
+      <View style={styles.content}>
+        <Text style={styles.logo}>🎤</Text>
         <Text style={styles.title}>June Voice</Text>
-        <TouchableOpacity style={styles.button} onPress={() => router.replace('/(tabs)/chat')}>
-          <Text style={styles.buttonText}>Go to Chat</Text>
-        </TouchableOpacity>
+        <Text style={styles.subtitle}>Initializing...</Text>
       </View>
     </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#000' },
-  inner: { flex: 1, alignItems: 'center', justifyContent: 'center' },
-  title: { color: '#fff', fontSize: 28, fontWeight: '700', marginBottom: 16 },
-  button: { backgroundColor: '#007AFF', paddingHorizontal: 24, paddingVertical: 12, borderRadius: 10 },
-  buttonText: { color: '#fff', fontWeight: '600' },
+  container: {
+    flex: 1,
+    backgroundColor: '#000',
+  },
+  content: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  logo: {
+    fontSize: 80,
+    marginBottom: 20,
+  },
+  title: {
+    color: '#fff',
+    fontSize: 32,
+    fontWeight: 'bold',
+    marginBottom: 8,
+  },
+  subtitle: {
+    color: '#888',
+    fontSize: 16,
+  },
 });

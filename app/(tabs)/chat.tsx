@@ -363,7 +363,6 @@ export default function ChatScreen() {
   const { liveKitToken, isLoading: tokenLoading, error: tokenError, generateToken } = useLiveKitToken();
   const [lkConnected, setLkConnected] = React.useState(false);
   const [connectionAttempts, setConnectionAttempts] = React.useState(0);
-  const [connectionTimeout, setConnectionTimeout] = React.useState<NodeJS.Timeout | null>(null);
 
   useEffect(() => {
     const requestMicPermission = async () => {
@@ -388,22 +387,13 @@ export default function ChatScreen() {
     requestMicPermission();
   }, []);
 
-  // Removed TLS preflight and manual WS path probes
-  useEffect(() => {}, [liveKitToken?.livekitUrl]);
-
+  // Add trace logs right before rendering LiveKitRoom
   useEffect(() => {
-    if (isAuthenticated && !liveKitToken && !tokenLoading) {
-      console.log('🎫 [DEBUG] Generating LiveKit token...');
-      generateToken();
-    }
-  }, [isAuthenticated, liveKitToken, tokenLoading, generateToken]);
-
-  // Removed manual 30s connection timeout handler - rely on SDK's retry/backoff
-  useEffect(() => {
-    if (connectionTimeout) {
-      clearTimeout(connectionTimeout);
-      setConnectionTimeout(null);
-    }
+    if (!liveKitToken) return;
+    console.log('🐛 [TRACE] Token ready for LiveKitRoom:', {
+      serverUrl: liveKitToken.livekitUrl,
+      tokenPreview: (liveKitToken.token || '').substring(0, 30) + '...'
+    });
   }, [liveKitToken]);
 
   if (!isAuthenticated) {
@@ -449,9 +439,11 @@ export default function ChatScreen() {
   }
 
   const serverUrl = liveKitToken.livekitUrl;
-  console.log('🎫 [DEBUG] Using LiveKit server URL:', serverUrl);
-  console.log('🎫 [DEBUG] Token length:', liveKitToken.token?.length);
-  console.log('🎫 [DEBUG] Connection attempt:', connectionAttempts + 1);
+  console.log('🐛 [TRACE] About to render LiveKitRoom with:', {
+    serverUrl,
+    tokenPreview: (liveKitToken.token || '').substring(0, 30) + '...',
+    connectFlag: true,
+  });
 
   return (
     <LiveKitRoom
@@ -461,45 +453,36 @@ export default function ChatScreen() {
       options={{
         adaptiveStream: true,
         dynacast: true,
+        // @ts-ignore - some SDKs accept logLevel; safe to include for trace
+        logLevel: 'debug',
       }}
       audio={false}
       video={false}
       onConnected={() => {
-        console.log('🟢 [DEBUG] LiveKit onConnected event fired!');
-        console.log('🟢 [DEBUG] Connection successful after', connectionAttempts + 1, 'attempts');
+        console.log('🟢 [SUCCESS] LiveKit connected!');
         setLkConnected(true);
       }}
       onDisconnected={(reason?: any) => {
-        console.log('🔴 [DEBUG] LiveKit onDisconnected event fired, reason:', reason);
+        console.log('🔴 [DISCONNECT] LiveKit disconnected:', reason);
         setLkConnected(false);
       }}
       onError={(e: any) => {
-        const msg = e?.message || String(e);
-        const cause = (e?.cause && (e.cause.message || String(e.cause))) || null;
-        console.error('🔴 [DEBUG] LiveKitRoom onError event:', { 
-          msg, 
-          cause, 
-          url: serverUrl,
-          stack: e?.stack,
+        console.error('🚨 [ERROR] LiveKit error:', {
+          message: e?.message,
           name: e?.name,
-          code: e?.code
+          code: e?.code,
+          stack: e?.stack,
+          cause: e?.cause,
         });
-        Alert.alert(
-          'LiveKit Connection Error', 
-          `Frontend Error Details:\n\n` +
-          `Message: ${msg}\n` +
-          `${cause ? `Cause: ${cause}\n` : ''}` +
-          `URL: ${serverUrl}\n\n` +
-          `This indicates a connection-level issue. Check:\n` +
-          `- Server is running and accessible\n` +
-          `- WebSocket path /rtc is properly configured\n` +
-          `- Token signing keys match server config\n` +
-          `- No firewall blocking WebSocket connections`,
-          [
-            { text: 'Retry', onPress: generateToken },
-            { text: 'OK' }
-          ]
-        );
+      }}
+      onConnectionStateChanged={(state: any) => {
+        console.log('🔄 [STATE] Connection state changed:', state);
+      }}
+      onReconnecting={() => {
+        console.log('🔄 [RECONNECT] LiveKit reconnecting...');
+      }}
+      onReconnected={() => {
+        console.log('🟢 [RECONNECT] LiveKit reconnected!');
       }}
     >
       {lkConnected ? (
@@ -513,10 +496,10 @@ export default function ChatScreen() {
             </Text>
             <Text style={styles.debugConnectionInfo}>
               {[
-                `🔍 Attempt: ${connectionAttempts + 1}/3`,
+                `🔍 Attempt: 1`,
                 `📡 Server: ${serverUrl.replace('wss://', '')}`,
                 `🎫 Token: ${(liveKitToken.token?.length || 0)} chars`,
-                `⏰ Timeout: managed by SDK`,
+                `🧪 Trace: enabled`,
               ].join('\n')}
             </Text>
           </View>

@@ -14,22 +14,20 @@ import { LiveKitRoom, AudioSession } from '@livekit/react-native';
 import { backendApi } from '../services/backendApi';
 import { RoomView } from './RoomView';
 
-interface LiveKitConnectionProps {
-  // Add any props if needed
-}
+interface LiveKitConnectionProps {}
 
 export const LiveKitConnection: React.FC<LiveKitConnectionProps> = () => {
   const [roomName, setRoomName] = useState('default-room');
-  const [userId, setUserId] = useState('user123');
+  const [userId, setUserId] = useState(`user-${Date.now()}`);
   const [participantName, setParticipantName] = useState('Participant');
   const [token, setToken] = useState<string | null>(null);
   const [livekitUrl, setLivekitUrl] = useState<string>('');
   const [isConnecting, setIsConnecting] = useState(false);
   const [isConnected, setIsConnected] = useState(false);
   const [backendStatus, setBackendStatus] = useState<'unknown' | 'connected' | 'failed'>('unknown');
+  const [useTokenEndpoint, setUseTokenEndpoint] = useState(false); // toggle between /api/sessions and /livekit/token
 
   useEffect(() => {
-    // Initialize AudioSession for mobile
     const initAudio = async () => {
       try {
         await AudioSession.startAudioSession();
@@ -37,10 +35,8 @@ export const LiveKitConnection: React.FC<LiveKitConnectionProps> = () => {
         console.error('Failed to start audio session:', error);
       }
     };
-
     initAudio();
     testBackendConnection();
-
     return () => {
       AudioSession.stopAudioSession();
     };
@@ -48,8 +44,8 @@ export const LiveKitConnection: React.FC<LiveKitConnectionProps> = () => {
 
   const testBackendConnection = async () => {
     try {
-      const isConnected = await backendApi.testConnection();
-      setBackendStatus(isConnected ? 'connected' : 'failed');
+      const ok = await backendApi.testConnection();
+      setBackendStatus(ok ? 'connected' : 'failed');
     } catch (error) {
       setBackendStatus('failed');
       console.error('Backend connection test failed:', error);
@@ -64,21 +60,20 @@ export const LiveKitConnection: React.FC<LiveKitConnectionProps> = () => {
 
     setIsConnecting(true);
     try {
-      const sessionResponse = await backendApi.createSession(userId, roomName);
-      setToken(sessionResponse.access_token);
-      setLivekitUrl(sessionResponse.livekit_url);
-      // no immediate setIsConnected here, relies on onConnected of LiveKitRoom
-      console.log('Session created:', {
-        sessionId: sessionResponse.session_id,
-        roomName: sessionResponse.room_name,
-        livekitUrl: sessionResponse.livekit_url,
-      });
-    } catch (error) {
+      if (useTokenEndpoint) {
+        console.log('Using /livekit/token endpoint');
+        const tokenResponse = await backendApi.generateLiveKitToken(roomName, participantName);
+        setToken(tokenResponse.token);
+        setLivekitUrl(tokenResponse.livekitUrl);
+      } else {
+        console.log('Using /api/sessions endpoint');
+        const sessionResponse = await backendApi.createSession(userId, roomName);
+        setToken(sessionResponse.access_token);
+        setLivekitUrl(sessionResponse.livekit_url);
+      }
+    } catch (error: any) {
       console.error('Connection failed:', error);
-      Alert.alert(
-        'Connection Failed',
-        `Failed to connect to room: ${error.message}`
-      );
+      Alert.alert('Connection Failed', String(error?.message ?? error));
       setIsConnected(false);
     } finally {
       setIsConnecting(false);
@@ -99,7 +94,6 @@ export const LiveKitConnection: React.FC<LiveKitConnectionProps> = () => {
     }
   };
 
-  // Delay mount RoomView until LiveKitRoom fires onConnected
   if (token && livekitUrl) {
     return (
       <LiveKitRoom
@@ -109,13 +103,27 @@ export const LiveKitConnection: React.FC<LiveKitConnectionProps> = () => {
         options={{ adaptiveStream: { pixelDensity: 'screen' } }}
         audio={true}
         video={false}
-        onConnected={() => setIsConnected(true)}
-        onDisconnected={() => setIsConnected(false)}
+        onConnected={() => {
+          console.log('LiveKit onConnected');
+          setIsConnected(true);
+        }}
+        onDisconnected={(reason) => {
+          console.warn('LiveKit onDisconnected', reason);
+          setIsConnected(false);
+        }}
+        onError={(err) => {
+          console.error('LiveKit onError', err);
+        }}
+        onConnectionStateChanged={(state) => {
+          console.log('LiveKit connection state:', state);
+        }}
       >
-        {isConnected ? <RoomView onDisconnect={disconnect} /> : (
-           <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: '#0B1426' }}>
-             <Text style={{ color: '#FFF', fontSize: 20 }}>Connecting to room…</Text>
-           </View>
+        {isConnected ? (
+          <RoomView onDisconnect={disconnect} />
+        ) : (
+          <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: '#0B1426' }}>
+            <Text style={{ color: '#FFF', fontSize: 20 }}>Connecting to room…</Text>
+          </View>
         )}
       </LiveKitRoom>
     );
@@ -125,24 +133,29 @@ export const LiveKitConnection: React.FC<LiveKitConnectionProps> = () => {
     <View style={styles.container}>
       <Text style={styles.title}>June Voice Assistant</Text>
       <Text style={styles.subtitle}>LiveKit PoC</Text>
+
       <View style={styles.statusContainer}>
         <View style={[styles.statusDot, { backgroundColor: getBackendStatusColor() }]} />
         <Text style={styles.statusText}>
           Backend: {backendStatus === 'connected' ? 'Connected' : backendStatus === 'failed' ? 'Failed' : 'Checking...'}
         </Text>
       </View>
+
       <View style={styles.inputContainer}>
         <Text style={styles.label}>Room Name</Text>
         <TextInput style={styles.input} value={roomName} onChangeText={setRoomName} placeholder="default-room" />
       </View>
+
       <View style={styles.inputContainer}>
         <Text style={styles.label}>User ID</Text>
-        <TextInput style={styles.input} value={userId} onChangeText={setUserId} placeholder="user123" />
+        <TextInput style={styles.input} value={userId} onChangeText={setUserId} placeholder="unique id" />
       </View>
+
       <View style={styles.inputContainer}>
         <Text style={styles.label}>Participant Name</Text>
         <TextInput style={styles.input} value={participantName} onChangeText={setParticipantName} placeholder="Participant" />
       </View>
+
       <TouchableOpacity style={[styles.button, isConnecting && styles.buttonDisabled]} onPress={connectToRoom} disabled={isConnecting || backendStatus === 'failed'}>
         {isConnecting ? (
           <ActivityIndicator color="#FFFFFF" />
@@ -150,11 +163,20 @@ export const LiveKitConnection: React.FC<LiveKitConnectionProps> = () => {
           <Text style={styles.buttonText}>Connect to Room</Text>
         )}
       </TouchableOpacity>
+
+      <TouchableOpacity
+        style={[styles.button, { backgroundColor: '#374151' }]}
+        onPress={() => setUseTokenEndpoint((v) => !v)}
+      >
+        <Text style={styles.buttonText}>Switch to {useTokenEndpoint ? '/api/sessions' : '/livekit/token'}</Text>
+      </TouchableOpacity>
+
       {backendStatus === 'failed' && (
         <TouchableOpacity style={[styles.button, styles.retryButton]} onPress={testBackendConnection}>
           <Text style={styles.buttonText}>Retry Backend Connection</Text>
         </TouchableOpacity>
       )}
+
       <View style={styles.infoContainer}>
         <Text style={styles.infoTitle}>Backend Endpoints:</Text>
         <Text style={styles.infoText}>• /api/sessions/ - Create session</Text>
@@ -166,91 +188,20 @@ export const LiveKitConnection: React.FC<LiveKitConnectionProps> = () => {
 };
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    padding: 20,
-    backgroundColor: '#0B1426',
-    justifyContent: 'center',
-  },
-  title: {
-    fontSize: 24,
-    fontWeight: 'bold',
-    color: '#FFFFFF',
-    textAlign: 'center',
-    marginBottom: 8,
-  },
-  subtitle: {
-    fontSize: 16,
-    color: '#8E9BAE',
-    textAlign: 'center',
-    marginBottom: 30,
-  },
-  statusContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginBottom: 30,
-  },
-  statusDot: {
-    width: 12,
-    height: 12,
-    borderRadius: 6,
-    marginRight: 8,
-  },
-  statusText: {
-    color: '#8E9BAE',
-    fontSize: 14,
-  },
-  inputContainer: {
-    marginBottom: 20,
-  },
-  label: {
-    fontSize: 16,
-    color: '#FFFFFF',
-    marginBottom: 8,
-  },
-  input: {
-    backgroundColor: '#1A2332',
-    borderColor: '#2D3748',
-    borderWidth: 1,
-    borderRadius: 8,
-    padding: 12,
-    fontSize: 16,
-    color: '#FFFFFF',
-  },
-  button: {
-    backgroundColor: '#4F46E5',
-    padding: 16,
-    borderRadius: 8,
-    alignItems: 'center',
-    marginVertical: 8,
-  },
-  buttonDisabled: {
-    backgroundColor: '#6B7280',
-  },
-  retryButton: {
-    backgroundColor: '#F59E0B',
-  },
-  buttonText: {
-    color: '#FFFFFF',
-    fontSize: 16,
-    fontWeight: 'bold',
-  },
-  infoContainer: {
-    marginTop: 30,
-    padding: 16,
-    backgroundColor: '#1A2332',
-    borderRadius: 8,
-  },
-  infoTitle: {
-    fontSize: 14,
-    fontWeight: 'bold',
-    color: '#FFFFFF',
-    marginBottom: 8,
-  },
-  infoText: {
-    fontSize: 12,
-    color: '#8E9BAE',
-    marginBottom: 4,
-  },
+  container: { flex: 1, padding: 20, backgroundColor: '#0B1426', justifyContent: 'center' },
+  title: { fontSize: 24, fontWeight: 'bold', color: '#FFFFFF', textAlign: 'center', marginBottom: 8 },
+  subtitle: { fontSize: 16, color: '#8E9BAE', textAlign: 'center', marginBottom: 30 },
+  statusContainer: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', marginBottom: 30 },
+  statusDot: { width: 12, height: 12, borderRadius: 6, marginRight: 8 },
+  statusText: { color: '#8E9BAE', fontSize: 14 },
+  inputContainer: { marginBottom: 20 },
+  label: { fontSize: 16, color: '#FFFFFF', marginBottom: 8 },
+  input: { backgroundColor: '#1A2332', borderColor: '#2D3748', borderWidth: 1, borderRadius: 8, padding: 12, fontSize: 16, color: '#FFFFFF' },
+  button: { backgroundColor: '#4F46E5', padding: 16, borderRadius: 8, alignItems: 'center', marginVertical: 8 },
+  buttonDisabled: { backgroundColor: '#6B7280' },
+  retryButton: { backgroundColor: '#F59E0B' },
+  buttonText: { color: '#FFFFFF', fontSize: 16, fontWeight: 'bold' },
+  infoContainer: { marginTop: 30, padding: 16, backgroundColor: '#1A2332', borderRadius: 8 },
+  infoTitle: { fontSize: 14, fontWeight: 'bold', color: '#FFFFFF', marginBottom: 8 },
+  infoText: { fontSize: 12, color: '#8E9BAE', marginBottom: 4 },
 });

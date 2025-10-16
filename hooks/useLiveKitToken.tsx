@@ -6,7 +6,7 @@ interface LiveKitToken {
   token: string;
   roomName: string;
   participantName: string;
-  livekitUrl?: string;
+  livekitUrl: string;
 }
 
 interface Message {
@@ -18,14 +18,14 @@ interface Message {
 }
 
 export function useLiveKitToken() {
-  const { accessToken, isAuthenticated } = useAuth();
+  const { isAuthenticated, accessToken } = useAuth();
   const [liveKitToken, setLiveKitToken] = useState<LiveKitToken | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [messages, setMessages] = useState<Message[]>([]);
 
   const generateToken = useCallback(async () => {
-    if (!accessToken || !isAuthenticated) {
+    if (!isAuthenticated) {
       setError('Not authenticated');
       return null;
     }
@@ -34,65 +34,60 @@ export function useLiveKitToken() {
       setIsLoading(true);
       setError(null);
 
-      // FIX: Use correct endpoint
       const url = `${APP_CONFIG.SERVICES.orchestrator}/api/sessions/`;
-      console.log('🎫 [LIVEKIT TOKEN] Requesting session from:', url);
+      console.log('🎫 [TOKEN] Requesting from:', url);
       
       const requestBody = {
         user_id: `user-${Date.now()}`,
         room_name: `voice-${Date.now()}`,
       };
       
-      console.log('🎫 [LIVEKIT TOKEN] Request body:', requestBody);
+      console.log('🎫 [TOKEN] Request body:', requestBody);
 
       const response = await fetch(url, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          // Remove Authorization header - not needed for session creation
+          // Note: No Authorization header needed for session creation
         },
         body: JSON.stringify(requestBody),
       });
 
-      console.log('🎫 [LIVEKIT TOKEN] Response status:', response.status);
+      console.log('🎫 [TOKEN] Response status:', response.status);
 
       if (!response.ok) {
         const errorText = await response.text();
-        console.log('🎫 [LIVEKIT TOKEN] Error response:', errorText);
-        throw new Error(`Failed to create session: ${response.status} - ${errorText}`);
+        console.log('🎫 [TOKEN] Error response:', errorText);
+        throw new Error(`HTTP ${response.status}: ${errorText}`);
       }
 
       const data = await response.json();
-      console.log('🎫 [LIVEKIT TOKEN] Success response:', data);
-      
-      // FIX: Map backend field names to frontend
-      const tokenData: LiveKitToken = {
-        token: data.access_token,           // backend uses access_token
-        roomName: data.room_name,           // backend uses room_name
-        participantName: data.user_id,      // backend uses user_id
-        livekitUrl: data.livekit_url,       // backend uses livekit_url
-      };
-
-      console.log('🎫 [LIVEKIT TOKEN] Parsed token data:', {
-        hasToken: !!tokenData.token,
-        tokenLength: tokenData.token?.length,
-        roomName: tokenData.roomName,
-        participantName: tokenData.participantName,
-        livekitUrl: tokenData.livekitUrl,
+      console.log('🎫 [TOKEN] Success response:', {
+        hasToken: !!data.access_token,
+        tokenLength: data.access_token?.length,
+        roomName: data.room_name,
+        userId: data.user_id,
+        livekitUrl: data.livekit_url,
       });
+      
+      const tokenData: LiveKitToken = {
+        token: data.access_token,
+        roomName: data.room_name,
+        participantName: data.user_id,
+        livekitUrl: data.livekit_url || APP_CONFIG.SERVICES.livekit,
+      };
 
       setLiveKitToken(tokenData);
       return tokenData;
     } catch (err: any) {
       const errorMessage = err.message || 'Failed to generate LiveKit token';
-      console.error('🎫 [LIVEKIT TOKEN ERROR]:', errorMessage);
+      console.error('🎫 [TOKEN ERROR]:', errorMessage);
       setError(errorMessage);
       return null;
     } finally {
       setIsLoading(false);
     }
-  }, [accessToken, isAuthenticated]);
-
+  }, [isAuthenticated, accessToken]);
 
   const addMessage = useCallback((text: string, isUser: boolean, isVoice = false) => {
     const message: Message = {

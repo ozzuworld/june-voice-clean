@@ -10,15 +10,52 @@ import {
   Alert,
   ActivityIndicator,
   ScrollView,
+  Platform,
+  PermissionsAndroid,
 } from 'react-native';
 import { LiveKitRoom, AudioSession } from '@livekit/react-native';
 import { backendApi } from '../services/backendApi';
 import { RoomView } from './RoomView';
 import { DebugConnect } from './DebugConnect';
+import { requestPermissionsAsync } from 'expo-av';
 
 interface LiveKitConnectionProps {}
 
 const FORCED_LIVEKIT_URL = 'wss://livekit.ozzu.world';
+
+async function ensureMicPermissionExpoAV(): Promise<boolean> {
+  try {
+    const res = await requestPermissionsAsync();
+    return res.status === 'granted';
+  } catch (e) {
+    console.warn('expo-av mic permission failed:', e);
+    return false;
+  }
+}
+
+async function ensureMicPermissionRN(): Promise<boolean> {
+  try {
+    const res = await PermissionsAndroid.request(
+      PermissionsAndroid.PERMISSIONS.RECORD_AUDIO,
+      {
+        title: 'Microphone Permission',
+        message: 'June Voice Assistant needs access to your microphone to join rooms.',
+        buttonPositive: 'OK',
+      }
+    );
+    return res === PermissionsAndroid.RESULTS.GRANTED;
+  } catch (e) {
+    console.warn('PermissionsAndroid mic request failed:', e);
+    return false;
+  }
+}
+
+async function ensureMicPermission(): Promise<boolean> {
+  if (Platform.OS !== 'android') return true;
+  const okExpo = await ensureMicPermissionExpoAV();
+  if (okExpo) return true;
+  return await ensureMicPermissionRN();
+}
 
 export const LiveKitConnection: React.FC<LiveKitConnectionProps> = () => {
   const [roomName, setRoomName] = useState('default-room');
@@ -60,6 +97,13 @@ export const LiveKitConnection: React.FC<LiveKitConnectionProps> = () => {
   };
 
   const connectToRoom = async () => {
+    // Ensure microphone permission before attempting to join
+    const granted = await ensureMicPermission();
+    if (!granted) {
+      Alert.alert('Permission required', 'Microphone access is needed to join the voice room.');
+      return;
+    }
+
     if (manualTokenMode) {
       if (!manualToken.trim()) {
         Alert.alert('Error', 'Paste a token first');

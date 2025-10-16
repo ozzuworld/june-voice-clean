@@ -1,28 +1,19 @@
-/**
- * LiveKit Configuration for June Voice Platform
- *
- * Finalized client flow:
- * 1) create session with orchestrator → receive LiveKit JWT and livekit_url
- * 2) connect directly to LiveKit with that token
- * 3) optionally open an app-level channel to the orchestrator for AI/UX messages
- *    LiveKit handles all WebRTC; the orchestrator only issues tokens and coordinates AI.
- */
-
+// config/livekit.ts - WITH CORRECT STUN SERVER IP
 export interface LiveKitConfig {
   serverUrl: string;
   iceServers?: RTCIceServer[];
 }
 
-// Production config for ozzu.world
-env: {
-}
 export const livekitConfig: LiveKitConfig = {
-  // Orchestrator provides livekit_url at /api/sessions; this is a fallback only
   serverUrl: "wss://livekit.ozzu.world",
-  // STUNner TURN/STUN deployed in your cluster
+  // YOUR ACTUAL STUN/TURN SERVER
   iceServers: [
-    { urls: ["stun:34.59.53.188:3478"] },
-    { urls: ["turn:34.59.53.188:3478"], username: "june-user", credential: "Pokemon123!" }
+    { urls: ["stun:34.59.178.219:3478"] },
+    { 
+      urls: ["turn:34.59.178.219:3478"], 
+      username: "june-user", 
+      credential: "Pokemon123!" 
+    }
   ]
 };
 
@@ -31,9 +22,6 @@ export const devLiveKitConfig: LiveKitConfig = {
   iceServers: [{ urls: ["stun:stun.l.google.com:19302"] }]
 };
 
-/**
- * Fetch dynamic LiveKit configuration from orchestrator (optional)
- */
 export const fetchLiveKitConfig = async (): Promise<LiveKitConfig> => {
   try {
     const response = await fetch('https://api.ozzu.world/api/livekit/config');
@@ -50,15 +38,11 @@ export const fetchLiveKitConfig = async (): Promise<LiveKitConfig> => {
   return livekitConfig;
 };
 
-/**
- * Generate LiveKit access token via orchestrator session creation ONLY
- */
 export const obtainSessionAndToken = async (
   roomName: string,
   participantName: string
-): Promise<{ sessionId: string; accessToken: string; livekitUrl: string; roomName: string; }>
-=> {
-  const resp = await fetch('https://api.ozzu.world/api/sessions', {
+): Promise<{ sessionId: string; accessToken: string; livekitUrl: string; roomName: string; }> => {
+  const resp = await fetch('https://api.ozzu.world/api/sessions/', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ user_id: participantName, room_name: roomName })
@@ -76,9 +60,6 @@ export const obtainSessionAndToken = async (
   };
 };
 
-/**
- * Optional: connect to orchestrator app-level channel (if/when available)
- */
 export const connectToOrchestrator = async (
   sessionId: string,
   onMessage?: (data: any) => void

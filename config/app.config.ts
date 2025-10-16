@@ -1,4 +1,4 @@
-// config/app.config.ts - Verified configuration matching your backend
+// config/app.config.ts - FIXED VERSION
 const APP_CONFIG = {
   // Keycloak Configuration
   KEYCLOAK_URL: 'https://idp.ozzu.world',
@@ -7,33 +7,21 @@ const APP_CONFIG = {
     CLIENT_ID: 'june-mobile-app',
   },
 
-  // Redirect scheme - matches your Keycloak client config
+  // Redirect scheme
   REDIRECT_SCHEME: 'june://auth/callback',
 
-  // Backend Services - verified working from your CLI test
+  // Backend Services
   SERVICES: {
     orchestrator: 'https://api.ozzu.world',
-    livekit: 'wss://livekit.ozzu.world/rtc',
+    // ⚠️ CRITICAL FIX: Remove /rtc - LiveKit client adds it automatically
+    livekit: 'wss://livekit.ozzu.world',
   },
 
   // API Endpoints
   ENDPOINTS: {
-    // This endpoint creates a session and returns LiveKit token
     SESSIONS: '/api/sessions/',
     HEALTH: '/healthz',
   },
-
-  // ICE Servers - Using hostnames instead of IPs for better compatibility
-  ICE_SERVERS: [
-    {
-      urls: 'stun:stun.ozzu.world:3478',
-    },
-    {
-      urls: 'turn:turn.ozzu.world:3478',
-      username: 'june-user',
-      credential: 'Pokemon123!',
-    },
-  ],
 
   // Debug mode
   DEBUG: __DEV__,

@@ -1,6 +1,6 @@
-// app/(tabs)/chat.tsx - Direct Room connection approach
+// app/(tabs)/chat.tsx - Let LiveKit server control ICE
 import React, { useEffect, useState } from 'react';
-import { SafeAreaView, View, Text, StyleSheet, ActivityIndicator, TouchableOpacity, Platform, PermissionsAndroid } from 'react-native';
+import { SafeAreaView, View, Text, StyleSheet, ActivityIndicator, TouchableOpacity, Platform, PermissionsAndroid, ScrollView } from 'react-native';
 import { Room, RoomEvent, setLogLevel, LogLevel } from 'livekit-client';
 import { AudioSession } from '@livekit/react-native';
 import APP_CONFIG from '@/config/app.config';
@@ -15,43 +15,49 @@ export default function ChatScreen() {
   const [error, setError] = useState<string | null>(null);
   const [participantCount, setParticipantCount] = useState(0);
   const [isMicEnabled, setIsMicEnabled] = useState(false);
+  const [logs, setLogs] = useState<string[]>([]);
+
+  const addLog = (msg: string) => {
+    const time = new Date().toLocaleTimeString();
+    console.log(msg);
+    setLogs(prev => [...prev.slice(-8), `${time}: ${msg}`]);
+  };
 
   useEffect(() => {
     let mounted = true;
+    let timeoutId: NodeJS.Timeout;
 
     const connect = async () => {
       try {
-        // Enable debug logging
         setLogLevel(LogLevel.debug);
-        console.log('🔧 [DEBUG] LiveKit logging enabled');
+        addLog('🔧 Starting...');
 
-        // Request microphone permission on Android
+        // Request permission
         if (Platform.OS === 'android') {
-          console.log('🎤 [PERMISSION] Requesting microphone permission...');
+          addLog('🎤 Requesting mic...');
           const granted = await PermissionsAndroid.request(
             PermissionsAndroid.PERMISSIONS.RECORD_AUDIO,
             {
               title: 'Microphone Permission',
-              message: 'June Voice needs access to your microphone',
+              message: 'June Voice needs microphone access',
               buttonNeutral: 'Ask Me Later',
               buttonNegative: 'Cancel',
               buttonPositive: 'OK',
             }
           );
           if (granted !== PermissionsAndroid.RESULTS.GRANTED) {
-            throw new Error('Microphone permission denied');
+            throw new Error('Mic permission denied');
           }
-          console.log('✅ [PERMISSION] Microphone permission granted');
+          addLog('✅ Mic granted');
         }
 
         // Start audio session
-        console.log('🎤 [AUDIO] Starting audio session...');
         await AudioSession.startAudioSession();
-        console.log('✅ [AUDIO] Audio session started');
+        addLog('✅ Audio started');
 
-        // Get token from backend
+        // Get token
         setStatus('fetching-token');
-        console.log('🎫 [TOKEN] Requesting session token...');
+        addLog('🎫 Getting token...');
         
         const response = await fetch(`${APP_CONFIG.SERVICES.orchestrator}/api/sessions/`, {
           method: 'POST',
@@ -63,154 +69,80 @@ export default function ChatScreen() {
         });
 
         if (!response.ok) {
-          throw new Error(`Failed to get token: ${response.status}`);
+          throw new Error(`Token failed: ${response.status}`);
         }
 
         const data = await response.json();
-        console.log('✅ [TOKEN] Token received');
-        console.log('🔧 [DEBUG] LiveKit URL:', data.livekit_url);
-        console.log('🔧 [DEBUG] Room name:', data.room_name);
+        addLog('✅ Token received');
 
-        // Setup room event listeners BEFORE connecting
-        console.log('📡 [ROOM] Setting up event listeners...');
+        let livekitUrl = data.livekit_url || APP_CONFIG.SERVICES.livekit;
+        if (livekitUrl.endsWith('/rtc')) {
+          livekitUrl = livekitUrl.replace('/rtc', '');
+          addLog('🔧 Fixed URL');
+        }
+
+        // Setup event listeners
+        addLog('📡 Setup listeners...');
         
         room.on(RoomEvent.Connected, () => {
-          console.log('✅ [ROOM] Connected!');
-          if (mounted) setStatus('connected');
+          addLog('✅ CONNECTED!');
+          clearTimeout(timeoutId);
+          if (mounted) {
+            setStatus('connected');
+            setParticipantCount(room.numParticipants);
+            setError(null);
+          }
         });
 
         room.on(RoomEvent.Disconnected, (reason) => {
-          console.log('🔌 [ROOM] Disconnected:', reason);
+          addLog(`🔌 Disconnected: ${reason}`);
           if (mounted) setStatus('disconnected');
         });
 
-        room.on(RoomEvent.Reconnecting, () => {
-          console.log('🔄 [ROOM] Reconnecting...');
-          if (mounted) setStatus('reconnecting');
-        });
-
-        room.on(RoomEvent.Reconnected, () => {
-          console.log('✅ [ROOM] Reconnected!');
-          if (mounted) setStatus('connected');
-        });
-
-        room.on(RoomEvent.ParticipantConnected, (participant) => {
-          console.log('👤 [ROOM] Participant joined:', participant.identity);
-          if (mounted) setParticipantCount(room.numParticipants);
-        });
-
-        room.on(RoomEvent.ParticipantDisconnected, (participant) => {
-          console.log('👤 [ROOM] Participant left:', participant.identity);
-          if (mounted) setParticipantCount(room.numParticipants);
-        });
-
         room.on(RoomEvent.ConnectionStateChanged, (state) => {
-          console.log('🔗 [ROOM] Connection state:', state);
+          addLog(`🔗 State: ${state}`);
         });
 
         room.on(RoomEvent.SignalConnected, () => {
-          console.log('📶 [ROOM] Signal connected');
+          addLog('📶 Signal OK!');
         });
 
-        // Add ICE connection state logging
-        room.on(RoomEvent.ConnectionQualityChanged, (quality, participant) => {
-          console.log('📊 [ROOM] Connection quality:', quality, participant?.identity);
+        room.on(RoomEvent.ParticipantConnected, (p) => {
+          addLog(`👤 ${p.identity} joined`);
+          if (mounted) setParticipantCount(room.numParticipants);
         });
 
-        room.on(RoomEvent.MediaDevicesChanged, () => {
-          console.log('🎧 [ROOM] Media devices changed');
-        });
+        // Set timeout
+        timeoutId = setTimeout(() => {
+          if (status === 'connecting') {
+            addLog('⏱️ TIMEOUT - ICE failed');
+            addLog('❌ Check network/TURN');
+            setError('Connection timeout. Your device cannot reach the TURN server or LiveKit server.');
+            setStatus('error');
+          }
+        }, 20000);
 
-        room.on(RoomEvent.MediaDevicesError, (error) => {
-          console.error('❌ [ROOM] Media devices error:', error);
-        });
-
-        // Now connect to the room
-        console.log('🚀 [ROOM] Connecting to LiveKit...');
-        console.log('🔧 [DEBUG] Using autoSubscribe: true');
-        console.log('🔧 [DEBUG] Full connection details:', {
-          url: data.livekit_url,
-          roomName: data.room_name,
-          hasToken: !!data.access_token,
-          tokenPreview: data.access_token.substring(0, 30) + '...',
-        });
+        // Connect WITHOUT overriding ICE config
+        // Let the server's token provide TURN servers
+        addLog('🚀 Connecting...');
+        addLog('🔧 Using server ICE config');
         setStatus('connecting');
 
-        // Test WebSocket connection first
-        console.log('🧪 [TEST] Testing raw WebSocket connection...');
-        try {
-          const testWs = new WebSocket(data.livekit_url);
-          testWs.onopen = () => {
-            console.log('✅ [TEST] WebSocket opened successfully!');
-            testWs.close();
-          };
-          testWs.onerror = (error) => {
-            console.error('❌ [TEST] WebSocket error:', error);
-          };
-          testWs.onclose = (event) => {
-            console.log('🔌 [TEST] WebSocket closed:', event.code, event.reason);
-          };
-        } catch (wsError) {
-          console.error('❌ [TEST] WebSocket test failed:', wsError);
-        }
-
-        // Wait a bit for the test
-        await new Promise(resolve => setTimeout(resolve, 2000));
-        console.log('🔧 [DEBUG] Proceeding with LiveKit connection...');
-        
-        // Create a timeout promise
-        const connectPromise = room.connect(data.livekit_url, data.access_token, {
+        await room.connect(livekitUrl, data.access_token, {
           autoSubscribe: true,
-          rtcConfig: {
-            iceServers: [
-              // Use public STUN servers as fallback
-              { urls: 'stun:stun.l.google.com:19302' },
-              { urls: 'stun:stun1.l.google.com:19302' },
-              // Your STUN server
-              { urls: 'stun:34.59.53.188:3478' },
-              // Your TURN server
-              {
-                urls: 'turn:34.59.53.188:3478',
-                username: 'june-user',
-                credential: 'Pokemon123!',
-              },
-              // Try both UDP and TCP
-              {
-                urls: 'turn:34.59.53.188:3478?transport=tcp',
-                username: 'june-user',
-                credential: 'Pokemon123!',
-              },
-            ],
-            iceTransportPolicy: 'all', // Try all ICE candidates
-            bundlePolicy: 'max-bundle',
-            rtcpMuxPolicy: 'require',
-          },
+          // NO rtcConfig - let server handle it!
         });
 
-        const timeoutPromise = new Promise((_, reject) => {
-          setTimeout(() => reject(new Error('Connection timeout after 30 seconds')), 30000);
-        });
-
-        await Promise.race([connectPromise, timeoutPromise]);
-
-        console.log('✅ [ROOM] Connect method completed');
-        
-        if (mounted) {
-          setParticipantCount(room.numParticipants);
-        }
+        addLog('✅ Connect done');
+        clearTimeout(timeoutId);
 
       } catch (e: any) {
-        console.error('❌ [ERROR]:', e);
-        console.error('❌ [ERROR] Stack:', e.stack);
-        
-        // Provide more helpful error messages
-        let errorMessage = e.message || 'Connection failed';
-        if (errorMessage.includes('timeout')) {
-          errorMessage = 'Connection timed out. Please check:\n• Network connectivity\n• Firewall settings\n• TURN/STUN server availability';
-        }
+        clearTimeout(timeoutId);
+        addLog(`❌ ERROR: ${e.message}`);
+        console.error('Full error:', e);
         
         if (mounted) {
-          setError(errorMessage);
+          setError(e.message || 'Connection failed');
           setStatus('error');
         }
       }
@@ -220,7 +152,8 @@ export default function ChatScreen() {
 
     return () => {
       mounted = false;
-      console.log('🧹 [CLEANUP] Disconnecting...');
+      clearTimeout(timeoutId);
+      addLog('🧹 Cleanup');
       room.disconnect();
       AudioSession.stopAudioSession();
     };
@@ -231,10 +164,18 @@ export default function ChatScreen() {
       const newState = !isMicEnabled;
       await room.localParticipant.setMicrophoneEnabled(newState);
       setIsMicEnabled(newState);
-      console.log('🎤 [MIC]', newState ? 'Enabled' : 'Disabled');
+      addLog(`🎤 Mic ${newState ? 'ON' : 'OFF'}`);
     } catch (e: any) {
-      console.error('❌ [MIC ERROR]:', e);
+      addLog(`❌ Mic error: ${e.message}`);
     }
+  };
+
+  const retry = () => {
+    setError(null);
+    setStatus('initializing');
+    setLogs([]);
+    // Force re-render to trigger useEffect
+    room.disconnect();
   };
 
   const getStatusColor = () => {
@@ -246,70 +187,64 @@ export default function ChatScreen() {
     }
   };
 
-  const getStatusText = () => {
-    switch (status) {
-      case 'initializing': return 'Initializing...';
-      case 'fetching-token': return 'Getting token...';
-      case 'connecting': return 'Connecting to LiveKit...';
-      case 'connected': return 'Connected';
-      case 'reconnecting': return 'Reconnecting...';
-      case 'disconnected': return 'Disconnected';
-      case 'error': return 'Error';
-      default: return status;
-    }
-  };
-
   return (
     <SafeAreaView style={styles.container}>
-      <View style={styles.content}>
+      <ScrollView style={styles.scroll} contentContainerStyle={styles.content}>
         <Text style={styles.title}>🎤 June Voice</Text>
 
         {/* Status */}
-        <View style={styles.statusCard}>
-          <View style={[styles.statusDot, { backgroundColor: getStatusColor() }]} />
-          <Text style={styles.statusText}>{getStatusText()}</Text>
+        <View style={styles.card}>
+          <View style={[styles.dot, { backgroundColor: getStatusColor() }]} />
+          <Text style={styles.statusText}>{status}</Text>
         </View>
 
         {/* Error */}
         {error && (
           <View style={styles.errorCard}>
             <Text style={styles.errorText}>❌ {error}</Text>
+            <TouchableOpacity style={styles.retryBtn} onPress={retry}>
+              <Text style={styles.retryText}>🔄 Retry</Text>
+            </TouchableOpacity>
           </View>
         )}
 
-        {/* Room Info */}
+        {/* Connected Info */}
         {status === 'connected' && (
-          <View style={styles.infoCard}>
-            <Text style={styles.infoTitle}>Room Information</Text>
-            <Text style={styles.infoText}>
-              Room: {room.name}
-            </Text>
-            <Text style={styles.infoText}>
-              Participants: {participantCount}
-            </Text>
-            <Text style={styles.infoText}>
-              State: {room.state}
-            </Text>
+          <View style={styles.card}>
+            <Text style={styles.successText}>✅ Connected!</Text>
+            <Text style={styles.infoText}>Room: {room.name}</Text>
+            <Text style={styles.infoText}>Participants: {participantCount}</Text>
           </View>
         )}
+
+        {/* Debug Logs */}
+        <View style={styles.logCard}>
+          <Text style={styles.logTitle}>Debug Log:</Text>
+          {logs.map((log, i) => (
+            <Text key={i} style={styles.logText}>{log}</Text>
+          ))}
+          {logs.length === 0 && (
+            <Text style={styles.logText}>No logs yet...</Text>
+          )}
+        </View>
 
         {/* Mic Control */}
         {status === 'connected' && (
           <TouchableOpacity
-            style={[styles.micButton, isMicEnabled && styles.micButtonActive]}
+            style={[styles.micBtn, isMicEnabled && styles.micBtnActive]}
             onPress={toggleMic}
           >
-            <Text style={styles.micButtonText}>
+            <Text style={styles.micBtnText}>
               {isMicEnabled ? '🎤 Mute' : '🔇 Unmute'}
             </Text>
           </TouchableOpacity>
         )}
 
-        {/* Loading indicator */}
-        {(status === 'connecting' || status === 'fetching-token' || status === 'initializing') && (
+        {/* Loading */}
+        {(status === 'connecting' || status === 'fetching-token') && (
           <ActivityIndicator size="large" color="#4A9EFF" style={styles.loader} />
         )}
-      </View>
+      </ScrollView>
     </SafeAreaView>
   );
 }
@@ -319,76 +254,104 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: '#000',
   },
-  content: {
+  scroll: {
     flex: 1,
+  },
+  content: {
     padding: 20,
-    justifyContent: 'center',
+    paddingTop: 40,
   },
   title: {
-    fontSize: 40,
+    fontSize: 36,
     fontWeight: 'bold',
     color: '#fff',
     textAlign: 'center',
-    marginBottom: 40,
+    marginBottom: 30,
   },
-  statusCard: {
+  card: {
+    backgroundColor: '#1a1a1a',
+    padding: 16,
+    borderRadius: 12,
+    marginBottom: 16,
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#1a1a1a',
-    padding: 20,
-    borderRadius: 12,
-    marginBottom: 20,
   },
-  statusDot: {
-    width: 12,
-    height: 12,
-    borderRadius: 6,
-    marginRight: 12,
+  dot: {
+    width: 10,
+    height: 10,
+    borderRadius: 5,
+    marginRight: 10,
   },
   statusText: {
     color: '#fff',
-    fontSize: 18,
+    fontSize: 16,
     fontWeight: '600',
+  },
+  successText: {
+    color: '#4CAF50',
+    fontSize: 16,
+    fontWeight: 'bold',
+    marginBottom: 8,
+  },
+  infoText: {
+    color: '#aaa',
+    fontSize: 13,
+    marginTop: 4,
   },
   errorCard: {
     backgroundColor: '#ff4d4f',
     padding: 16,
-    borderRadius: 8,
-    marginBottom: 20,
+    borderRadius: 12,
+    marginBottom: 16,
   },
   errorText: {
     color: '#fff',
     fontSize: 14,
-  },
-  infoCard: {
-    backgroundColor: '#1a1a1a',
-    padding: 20,
-    borderRadius: 12,
-    marginBottom: 20,
-  },
-  infoTitle: {
-    color: '#4A9EFF',
-    fontSize: 16,
-    fontWeight: 'bold',
     marginBottom: 12,
   },
-  infoText: {
-    color: '#fff',
-    fontSize: 14,
-    marginBottom: 6,
-  },
-  micButton: {
-    backgroundColor: '#333',
-    padding: 20,
-    borderRadius: 12,
+  retryBtn: {
+    backgroundColor: '#fff',
+    padding: 12,
+    borderRadius: 8,
     alignItems: 'center',
   },
-  micButtonActive: {
+  retryText: {
+    color: '#ff4d4f',
+    fontSize: 14,
+    fontWeight: 'bold',
+  },
+  logCard: {
+    backgroundColor: '#1a1a1a',
+    padding: 16,
+    borderRadius: 12,
+    marginBottom: 16,
+    maxHeight: 200,
+  },
+  logTitle: {
+    color: '#4A9EFF',
+    fontSize: 12,
+    fontWeight: 'bold',
+    marginBottom: 8,
+  },
+  logText: {
+    color: '#888',
+    fontSize: 10,
+    fontFamily: 'monospace',
+    marginBottom: 2,
+  },
+  micBtn: {
+    backgroundColor: '#333',
+    padding: 18,
+    borderRadius: 12,
+    alignItems: 'center',
+    marginBottom: 16,
+  },
+  micBtnActive: {
     backgroundColor: '#4A9EFF',
   },
-  micButtonText: {
+  micBtnText: {
     color: '#fff',
-    fontSize: 18,
+    fontSize: 16,
     fontWeight: 'bold',
   },
   loader: {

@@ -14,6 +14,7 @@ import {
 import { LiveKitRoom, AudioSession } from '@livekit/react-native';
 import { backendApi } from '../services/backendApi';
 import { RoomView } from './RoomView';
+import { DebugConnect } from './DebugConnect';
 
 interface LiveKitConnectionProps {}
 
@@ -31,6 +32,7 @@ export const LiveKitConnection: React.FC<LiveKitConnectionProps> = () => {
   const [useTokenEndpoint, setUseTokenEndpoint] = useState(false);
   const [manualTokenMode, setManualTokenMode] = useState(false);
   const [manualToken, setManualToken] = useState('');
+  const [debugConnectMode, setDebugConnectMode] = useState(true); // default ON to surface errors
 
   useEffect(() => {
     const initAudio = async () => {
@@ -110,6 +112,17 @@ export const LiveKitConnection: React.FC<LiveKitConnectionProps> = () => {
   };
 
   if (token && livekitUrl) {
+    if (debugConnectMode) {
+      return (
+        <DebugConnect
+          serverUrl={livekitUrl}
+          token={token}
+          onConnected={() => setIsConnected(true)}
+          onDisconnected={() => setIsConnected(false)}
+        />
+      );
+    }
+
     return (
       <LiveKitRoom
         serverUrl={livekitUrl}
@@ -133,7 +146,6 @@ export const LiveKitConnection: React.FC<LiveKitConnectionProps> = () => {
           console.log('LiveKit connection state:', state);
         }}
       >
-        {/* Child mount probe to ensure subtree is rendering */}
         <View style={{ position: 'absolute', top: 8, left: 8 }}>
           <Text style={{ color: '#9CA3AF' }}>Subtree mounted</Text>
         </View>
@@ -165,6 +177,13 @@ export const LiveKitConnection: React.FC<LiveKitConnectionProps> = () => {
         onPress={() => setManualTokenMode((v) => !v)}
       >
         <Text style={styles.buttonText}>{manualTokenMode ? 'Manual Token Mode: ON' : 'Manual Token Mode: OFF'}</Text>
+      </TouchableOpacity>
+
+      <TouchableOpacity
+        style={[styles.button, { backgroundColor: debugConnectMode ? '#10B981' : '#374151' }]}
+        onPress={() => setDebugConnectMode((v) => !v)}
+      >
+        <Text style={styles.buttonText}>{debugConnectMode ? 'Debug Connect Mode: ON' : 'Debug Connect Mode: OFF'}</Text>
       </TouchableOpacity>
 
       {manualTokenMode ? (

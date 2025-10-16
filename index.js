@@ -1,31 +1,13 @@
-import { AppRegistry } from 'react-native';
-import 'react-native-webrtc';
-import 'react-native-get-random-values';
+import { registerGlobals } from '@livekit/react-native';
+import 'expo/build/Expo.fx';
 
-// Polyfill TextEncoder/TextDecoder for Hermes if missing
+// Register LiveKit WebRTC globals before app code runs
 try {
-  // eslint-disable-next-line @typescript-eslint/no-var-requires
-  const te = require('text-encoding');
-  if (typeof global.TextEncoder === 'undefined') {
-    // @ts-ignore
-    global.TextEncoder = te.TextEncoder;
-  }
-  if (typeof global.TextDecoder === 'undefined') {
-    // @ts-ignore
-    global.TextDecoder = te.TextDecoder;
-  }
+  registerGlobals();
+  console.log('✅ LiveKit WebRTC globals registered');
 } catch (e) {
-  console.log('TextEncoder/TextDecoder polyfill not loaded:', e?.message || String(e));
+  console.log('⚠️ Failed to register LiveKit globals', e);
 }
 
-// Optional: ensure WebSocket present
-if (typeof global.WebSocket === 'undefined') {
-  console.log('⚠️ WebSocket missing on global');
-}
-
-import App from './App';
-import { name as appName } from './app.json';
-
-console.log('✅ Global polyfills initialized (webrtc, getRandomValues, text-encoding)');
-
-AppRegistry.registerComponent(appName, () => App);
+// Keep existing Expo Router entry
+import 'expo-router/entry';

@@ -2,7 +2,7 @@
 
 import React, { useEffect, useRef } from 'react';
 import { View, Text } from 'react-native';
-import { Room, RoomEvent, RoomState, connect } from 'livekit-client';
+import { Room, RoomEvent } from 'livekit-client';
 
 interface Props {
   serverUrl: string;
@@ -18,17 +18,26 @@ export const DebugConnect: React.FC<Props> = ({ serverUrl, token, onConnected, o
     let active = true;
     (async () => {
       try {
-        console.log('DebugConnect: calling connect', { serverUrl, tokenLen: token?.length });
-        const room = await connect(serverUrl, token, { autoSubscribe: true });
-        if (!active) return;
+        console.log('DebugConnect: creating Room and calling room.connect', { serverUrl, tokenLen: token?.length });
+        const room = new Room({
+          adaptiveStream: { pixelDensity: 'screen' },
+          dynacast: true,
+          stopLocalTrackOnUnpublish: true,
+        });
         roomRef.current = room;
-        console.log('DebugConnect: connected, state=', room.state);
+
         room.on(RoomEvent.ConnectionStateChanged, (state) => {
           console.log('DebugConnect: state=', state);
         });
+
+        await room.connect(serverUrl, token, { autoSubscribe: true });
+        if (!active) return;
+
+        console.log('DebugConnect: connected, state=', room.state);
         onConnected?.();
+
       } catch (e) {
-        console.error('DebugConnect: connect() threw', e);
+        console.error('DebugConnect: room.connect() threw', e);
       }
     })();
 

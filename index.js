@@ -23,6 +23,16 @@ if (typeof global.Buffer === 'undefined') {
   global.Buffer = Buffer;
 }
 
+// Polyfill atob/btoa for Hermes (base64 helpers some libs rely on)
+if (typeof global.atob === 'undefined') {
+  // @ts-ignore
+  global.atob = (data) => Buffer.from(String(data), 'base64').toString('binary');
+}
+if (typeof global.btoa === 'undefined') {
+  // @ts-ignore
+  global.btoa = (data) => Buffer.from(String(data), 'binary').toString('base64');
+}
+
 // CRITICAL: Register LiveKit globals before anything else
 registerGlobals();
 

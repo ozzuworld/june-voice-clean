@@ -9,6 +9,7 @@ import {
   StyleSheet,
   Alert,
   ActivityIndicator,
+  ScrollView,
 } from 'react-native';
 import { LiveKitRoom, AudioSession } from '@livekit/react-native';
 import { backendApi } from '../services/backendApi';
@@ -28,6 +29,8 @@ export const LiveKitConnection: React.FC<LiveKitConnectionProps> = () => {
   const [isConnected, setIsConnected] = useState(false);
   const [backendStatus, setBackendStatus] = useState<'unknown' | 'connected' | 'failed'>('unknown');
   const [useTokenEndpoint, setUseTokenEndpoint] = useState(false);
+  const [manualTokenMode, setManualTokenMode] = useState(false);
+  const [manualToken, setManualToken] = useState('');
 
   useEffect(() => {
     const initAudio = async () => {
@@ -55,6 +58,16 @@ export const LiveKitConnection: React.FC<LiveKitConnectionProps> = () => {
   };
 
   const connectToRoom = async () => {
+    if (manualTokenMode) {
+      if (!manualToken.trim()) {
+        Alert.alert('Error', 'Paste a token first');
+        return;
+      }
+      setToken(manualToken.trim());
+      setLivekitUrl(FORCED_LIVEKIT_URL);
+      return;
+    }
+
     if (!roomName.trim() || !userId.trim() || !participantName.trim()) {
       Alert.alert('Error', 'Please fill in all fields');
       return;
@@ -120,6 +133,10 @@ export const LiveKitConnection: React.FC<LiveKitConnectionProps> = () => {
           console.log('LiveKit connection state:', state);
         }}
       >
+        {/* Child mount probe to ensure subtree is rendering */}
+        <View style={{ position: 'absolute', top: 8, left: 8 }}>
+          <Text style={{ color: '#9CA3AF' }}>Subtree mounted</Text>
+        </View>
         {isConnected ? (
           <RoomView onDisconnect={disconnect} />
         ) : (
@@ -132,7 +149,7 @@ export const LiveKitConnection: React.FC<LiveKitConnectionProps> = () => {
   }
 
   return (
-    <View style={styles.container}>
+    <ScrollView contentContainerStyle={styles.container}>
       <Text style={styles.title}>June Voice Assistant</Text>
       <Text style={styles.subtitle}>LiveKit PoC</Text>
 
@@ -143,20 +160,46 @@ export const LiveKitConnection: React.FC<LiveKitConnectionProps> = () => {
         </Text>
       </View>
 
-      <View style={styles.inputContainer}>
-        <Text style={styles.label}>Room Name</Text>
-        <TextInput style={styles.input} value={roomName} onChangeText={setRoomName} placeholder="default-room" />
-      </View>
+      <TouchableOpacity
+        style={[styles.button, { backgroundColor: manualTokenMode ? '#10B981' : '#374151' }]}
+        onPress={() => setManualTokenMode((v) => !v)}
+      >
+        <Text style={styles.buttonText}>{manualTokenMode ? 'Manual Token Mode: ON' : 'Manual Token Mode: OFF'}</Text>
+      </TouchableOpacity>
 
-      <View style={styles.inputContainer}>
-        <Text style={styles.label}>User ID</Text>
-        <TextInput style={styles.input} value={userId} onChangeText={setUserId} placeholder="unique id" />
-      </View>
-
-      <View style={styles.inputContainer}>
-        <Text style={styles.label}>Participant Name</Text>
-        <TextInput style={styles.input} value={participantName} onChangeText={setParticipantName} placeholder="Participant" />
-      </View>
+      {manualTokenMode ? (
+        <View style={styles.inputContainer}>
+          <Text style={styles.label}>Paste Token</Text>
+          <TextInput
+            style={[styles.input, { height: 120 }]}
+            value={manualToken}
+            onChangeText={setManualToken}
+            placeholder="Paste JWT token here"
+            multiline
+          />
+        </View>
+      ) : (
+        <>
+          <View style={styles.inputContainer}>
+            <Text style={styles.label}>Room Name</Text>
+            <TextInput style={styles.input} value={roomName} onChangeText={setRoomName} placeholder="default-room" />
+          </View>
+          <View style={styles.inputContainer}>
+            <Text style={styles.label}>User ID</Text>
+            <TextInput style={styles.input} value={userId} onChangeText={setUserId} placeholder="unique id" />
+          </View>
+          <View style={styles.inputContainer}>
+            <Text style={styles.label}>Participant Name</Text>
+            <TextInput style={styles.input} value={participantName} onChangeText={setParticipantName} placeholder="Participant" />
+          </View>
+          <TouchableOpacity
+            style={[styles.button, { backgroundColor: '#374151' }]}
+            onPress={() => setUseTokenEndpoint((v) => !v)}
+          >
+            <Text style={styles.buttonText}>Switch to {useTokenEndpoint ? '/api/sessions' : '/livekit/token'}</Text>
+          </TouchableOpacity>
+        </>
+      )}
 
       <TouchableOpacity style={[styles.button, isConnecting && styles.buttonDisabled]} onPress={connectToRoom} disabled={isConnecting || backendStatus === 'failed'}>
         {isConnecting ? (
@@ -166,13 +209,6 @@ export const LiveKitConnection: React.FC<LiveKitConnectionProps> = () => {
         )}
       </TouchableOpacity>
 
-      <TouchableOpacity
-        style={[styles.button, { backgroundColor: '#374151' }]}
-        onPress={() => setUseTokenEndpoint((v) => !v)}
-      >
-        <Text style={styles.buttonText}>Switch to {useTokenEndpoint ? '/api/sessions' : '/livekit/token'}</Text>
-      </TouchableOpacity>
-
       {backendStatus === 'failed' && (
         <TouchableOpacity style={[styles.button, styles.retryButton]} onPress={testBackendConnection}>
           <Text style={styles.buttonText}>Retry Backend Connection</Text>
@@ -180,17 +216,18 @@ export const LiveKitConnection: React.FC<LiveKitConnectionProps> = () => {
       )}
 
       <View style={styles.infoContainer}>
-        <Text style={styles.infoTitle}>Backend Endpoints:</Text>
+        <Text style={styles.infoTitle}>LiveKit Server URL</Text>
+        <Text style={styles.infoText}>{FORCED_LIVEKIT_URL}</Text>
+        <Text style={[styles.infoTitle, { marginTop: 12 }]}>Endpoints</Text>
         <Text style={styles.infoText}>• /api/sessions/ - Create session</Text>
         <Text style={styles.infoText}>• /livekit/token - Generate token</Text>
-        <Text style={styles.infoText}>• LiveKit URL (forced): {FORCED_LIVEKIT_URL}</Text>
       </View>
-    </View>
+    </ScrollView>
   );
 };
 
 const styles = StyleSheet.create({
-  container: { flex: 1, padding: 20, backgroundColor: '#0B1426', justifyContent: 'center' },
+  container: { flexGrow: 1, padding: 20, backgroundColor: '#0B1426', justifyContent: 'center' },
   title: { fontSize: 24, fontWeight: 'bold', color: '#FFFFFF', textAlign: 'center', marginBottom: 8 },
   subtitle: { fontSize: 16, color: '#8E9BAE', textAlign: 'center', marginBottom: 30 },
   statusContainer: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', marginBottom: 30 },

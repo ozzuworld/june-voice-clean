@@ -16,6 +16,8 @@ import { RoomView } from './RoomView';
 
 interface LiveKitConnectionProps {}
 
+const FORCED_LIVEKIT_URL = 'wss://livekit.ozzu.world';
+
 export const LiveKitConnection: React.FC<LiveKitConnectionProps> = () => {
   const [roomName, setRoomName] = useState('default-room');
   const [userId, setUserId] = useState(`user-${Date.now()}`);
@@ -25,7 +27,7 @@ export const LiveKitConnection: React.FC<LiveKitConnectionProps> = () => {
   const [isConnecting, setIsConnecting] = useState(false);
   const [isConnected, setIsConnected] = useState(false);
   const [backendStatus, setBackendStatus] = useState<'unknown' | 'connected' | 'failed'>('unknown');
-  const [useTokenEndpoint, setUseTokenEndpoint] = useState(false); // toggle between /api/sessions and /livekit/token
+  const [useTokenEndpoint, setUseTokenEndpoint] = useState(false);
 
   useEffect(() => {
     const initAudio = async () => {
@@ -64,12 +66,12 @@ export const LiveKitConnection: React.FC<LiveKitConnectionProps> = () => {
         console.log('Using /livekit/token endpoint');
         const tokenResponse = await backendApi.generateLiveKitToken(roomName, participantName);
         setToken(tokenResponse.token);
-        setLivekitUrl(tokenResponse.livekitUrl);
+        setLivekitUrl(FORCED_LIVEKIT_URL);
       } else {
         console.log('Using /api/sessions endpoint');
         const sessionResponse = await backendApi.createSession(userId, roomName);
         setToken(sessionResponse.access_token);
-        setLivekitUrl(sessionResponse.livekit_url);
+        setLivekitUrl(FORCED_LIVEKIT_URL);
       }
     } catch (error: any) {
       console.error('Connection failed:', error);
@@ -181,7 +183,7 @@ export const LiveKitConnection: React.FC<LiveKitConnectionProps> = () => {
         <Text style={styles.infoTitle}>Backend Endpoints:</Text>
         <Text style={styles.infoText}>• /api/sessions/ - Create session</Text>
         <Text style={styles.infoText}>• /livekit/token - Generate token</Text>
-        <Text style={styles.infoText}>• LiveKit URL: wss://livekit.ozzu.world</Text>
+        <Text style={styles.infoText}>• LiveKit URL (forced): {FORCED_LIVEKIT_URL}</Text>
       </View>
     </View>
   );

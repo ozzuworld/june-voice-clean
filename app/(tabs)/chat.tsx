@@ -36,6 +36,35 @@ interface DebugInfo {
   canSubscribe: boolean;
 }
 
+// Helper components defined at top-level without hooks
+function ForceConnectButton({ onPress }: { onPress: () => void }) {
+  return (
+    <TouchableOpacity style={styles.retryButton} onPress={onPress}>
+      <Text style={styles.retryButtonText}>Force Connect</Text>
+    </TouchableOpacity>
+  );
+}
+
+function DirectConnectTestButton({ serverUrl, token }: { serverUrl: string; token: string }) {
+  const onPress = async () => {
+    try {
+      console.log('🐛 [TRACE] direct connect test start');
+      const { Room } = await import('livekit-client');
+      const r = new Room();
+      await r.connect(serverUrl, token);
+      console.log('🟢 [SUCCESS] direct connect ok');
+      await r.disconnect();
+    } catch (e: any) {
+      console.log('🚨 [ERROR] direct connect failed:', e?.message || String(e));
+    }
+  };
+  return (
+    <TouchableOpacity style={[styles.retryButton, { marginTop: 8 }]} onPress={onPress}>
+      <Text style={styles.retryButtonText}>Direct Connect Test</Text>
+    </TouchableOpacity>
+  );
+}
+
 function VoiceChatUI() {
   const room = useRoom();
   if (!room) {
@@ -79,7 +108,6 @@ function VoiceChatUI() {
     return () => console.log('🐛 [TRACE] VoiceChatUI unmounted');
   }, []);
 
-  // Enhanced room state monitoring
   useEffect(() => {
     if (!room) return;
 
@@ -381,23 +409,20 @@ export default function ChatScreen() {
     requestMicPermission();
   }, []);
 
-  // Trace token lifecycle
   useEffect(() => {
     console.log('🐛 [TRACE] tokenLoading:', tokenLoading, 'hasToken?', !!liveKitToken);
   }, [tokenLoading, liveKitToken]);
 
-  // Branch trace logs
-  const renderBranch = (name: string) => console.log('🐛 [TRACE] branch:', name);
-
-  // Force connect button helper
-  const ForceConnect = () => (
-    <TouchableOpacity style={styles.retryButton} onPress={generateToken}>
-      <Text style={styles.retryButtonText}>Force Connect</Text>
-    </TouchableOpacity>
-  );
+  // generate token when authenticated
+  useEffect(() => {
+    if (isAuthenticated && !liveKitToken && !tokenLoading) {
+      console.log('🎫 [DEBUG] Generating LiveKit token...');
+      generateToken();
+    }
+  }, [isAuthenticated, liveKitToken, tokenLoading, generateToken]);
 
   if (!isAuthenticated) {
-    renderBranch('unauthenticated');
+    console.log('🐛 [TRACE] branch: unauthenticated');
     return (
       <SafeAreaView style={styles.container}>
         <View style={styles.authContainer}>
@@ -420,15 +445,8 @@ export default function ChatScreen() {
     );
   }
 
-  useEffect(() => {
-    if (isAuthenticated && !liveKitToken && !tokenLoading) {
-      console.log('🎫 [DEBUG] Generating LiveKit token...');
-      generateToken();
-    }
-  }, [isAuthenticated, liveKitToken, tokenLoading, generateToken]);
-
   if (tokenLoading || !liveKitToken) {
-    renderBranch('loading token');
+    console.log('🐛 [TRACE] branch: loading token');
     return (
       <SafeAreaView style={styles.container}>
         <View style={styles.loadingContainer}>
@@ -437,47 +455,27 @@ export default function ChatScreen() {
           {tokenError && (
             <View>
               <Text style={styles.errorText}>{tokenError}</Text>
-              <ForceConnect />
+              <ForceConnectButton onPress={generateToken} />
             </View>
           )}
-          {!tokenError && <ForceConnect />}
+          {!tokenError && <ForceConnectButton onPress={generateToken} />}
         </View>
       </SafeAreaView>
     );
   }
 
-  const serverUrl = liveKitToken.livekitUrl;
+  const serverUrl = liveKitToken.livekitUrl!;
+  const token = liveKitToken.token!;
   console.log('🐛 [TRACE] Token ready for LiveKitRoom:', {
     serverUrl,
-    tokenPreview: (liveKitToken.token || '').substring(0, 30) + '...'
+    tokenPreview: (token || '').substring(0, 30) + '...'
   });
   console.log('🐛 [TRACE] branch: rendering LiveKitRoom');
-
-  // Direct SDK connect test button
-  const DirectConnectTest = () => (
-    <TouchableOpacity
-      style={[styles.retryButton, { marginTop: 8 }]}
-      onPress={async () => {
-        try {
-          console.log('🐛 [TRACE] direct connect test start');
-          const { Room } = await import('livekit-client');
-          const r = new Room();
-          await r.connect(serverUrl!, liveKitToken.token!);
-          console.log('🟢 [SUCCESS] direct connect ok');
-          await r.disconnect();
-        } catch (e: any) {
-          console.log('🚨 [ERROR] direct connect failed:', e?.message || String(e));
-        }
-      }}
-    >
-      <Text style={styles.retryButtonText}>Direct Connect Test</Text>
-    </TouchableOpacity>
-  );
 
   return (
     <LiveKitRoom
       serverUrl={serverUrl}
-      token={liveKitToken.token}
+      token={token}
       connect={true}
       options={{
         adaptiveStream: true,
@@ -525,11 +523,11 @@ export default function ChatScreen() {
               {[
                 `🔍 Attempt: ${connectionAttempts + 1}`,
                 `📡 Server: ${serverUrl.replace('wss://', '')}`,
-                `🎫 Token: ${(liveKitToken.token?.length || 0)} chars`,
+                `🎫 Token: ${(token?.length || 0)} chars`,
                 `🧪 Trace: enabled`,
               ].join('\n')}
             </Text>
-            <DirectConnectTest />
+            <DirectConnectTestButton serverUrl={serverUrl} token={token} />
           </View>
         </SafeAreaView>
       )}

@@ -1,4 +1,4 @@
-package com.kkazuma.junevoiceworkspace
+package com.kkazuma.junevoiceclean
 
 import android.app.Application
 import android.content.res.Configuration
@@ -15,9 +15,6 @@ import com.facebook.soloader.SoLoader
 
 import expo.modules.ApplicationLifecycleDispatcher
 import expo.modules.ReactNativeHostWrapper
-
-import com.livekit.reactnative.LiveKitReactNative
-import com.livekit.reactnative.audio.AudioType
 
 class MainApplication : Application(), ReactApplication {
 
@@ -45,10 +42,6 @@ class MainApplication : Application(), ReactApplication {
 
   override fun onCreate() {
     super.onCreate()
-    
-    // LiveKit native setup - Must be called BEFORE any React Native initialization
-    LiveKitReactNative.setup(this, AudioType.CommunicationAudioType())
-    
     SoLoader.init(this, OpenSourceMergedSoMapping)
     if (BuildConfig.IS_NEW_ARCHITECTURE_ENABLED) {
       // If you opted-in for the New Architecture, we load the native entry point for this app.

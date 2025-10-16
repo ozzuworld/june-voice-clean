@@ -1,4 +1,4 @@
-package com.kkazuma.junevoiceworkspace
+package com.kkazuma.junevoiceclean
 import expo.modules.splashscreen.SplashScreenManager
 
 import android.os.Build

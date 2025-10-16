@@ -21,7 +21,7 @@ const APP_CONFIG = {
 
   // API Endpoints
   ENDPOINTS: {
-    LIVEKIT_TOKEN: '/livekit/token',
+    SESSIONS: '/api/sessions/',
     CHAT: '/v1/chat',
     TTS: '/tts/generate',
     HEALTH: '/healthz',

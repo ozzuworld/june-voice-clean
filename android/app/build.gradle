@@ -86,9 +86,9 @@ android {
     buildToolsVersion rootProject.ext.buildToolsVersion
     compileSdk rootProject.ext.compileSdkVersion
 
-    namespace 'com.kkazuma.junevoiceworkspace'
+    namespace 'com.kkazuma.junevoiceclean'
     defaultConfig {
-        applicationId 'com.kkazuma.junevoiceworkspace'
+        applicationId 'com.kkazuma.junevoiceclean'
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
         versionCode 1

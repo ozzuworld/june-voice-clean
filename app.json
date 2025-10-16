@@ -6,13 +6,7 @@
     "scheme": "june",
     "orientation": "portrait",
     "jsEngine": "hermes",
-    "icon": "./assets/icon.png",
     "userInterfaceStyle": "automatic",
-    "splash": {
-      "image": "./assets/splash.png",
-      "resizeMode": "contain",
-      "backgroundColor": "#ffffff"
-    },
     "updates": {
       "url": "https://u.expo.dev/00000000-0000-0000-0000-000000000000"
     },
@@ -23,22 +17,22 @@
       "**/*"
     ],
     "ios": {
-      "supportsTablet": true
+      "supportsTablet": true,
+      "bundleIdentifier": "com.kkazuma.junevoiceclean"
     },
     "android": {
-      "adaptiveIcon": {
-        "foregroundImage": "./assets/adaptive-icon.png",
-        "backgroundColor": "#ffffff"
-      },
+      "package": "com.kkazuma.junevoiceclean",
       "permissions": [
         "RECORD_AUDIO",
-        "CAMERA"
+        "CAMERA",
+        "MODIFY_AUDIO_SETTINGS",
+        "BLUETOOTH",
+        "BLUETOOTH_CONNECT"
       ]
     },
     "web": {
       "bundler": "metro",
-      "output": "static",
-      "favicon": "./assets/favicon.png"
+      "output": "static"
     },
     "plugins": [
       "expo-router",

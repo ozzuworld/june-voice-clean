@@ -34,48 +34,43 @@ export function useLiveKitToken() {
       setIsLoading(true);
       setError(null);
 
-      const url = `${APP_CONFIG.SERVICES.orchestrator}${APP_CONFIG.ENDPOINTS.LIVEKIT_TOKEN}`;
-      console.log('🎫 [LIVEKIT TOKEN] Requesting token from:', url);
+      // FIX: Use correct endpoint
+      const url = `${APP_CONFIG.SERVICES.orchestrator}/api/sessions/`;
+      console.log('🎫 [LIVEKIT TOKEN] Requesting session from:', url);
       
       const requestBody = {
-        roomName: `voice-${Date.now()}`,
-        participantName: `user-${Date.now()}`,
+        user_id: `user-${Date.now()}`,
+        room_name: `voice-${Date.now()}`,
       };
       
       console.log('🎫 [LIVEKIT TOKEN] Request body:', requestBody);
-      console.log('🎫 [LIVEKIT TOKEN] Using access token:', accessToken ? `${accessToken.substring(0, 20)}...` : 'none');
 
       const response = await fetch(url, {
         method: 'POST',
         headers: {
-          'Authorization': `Bearer ${accessToken}`,
           'Content-Type': 'application/json',
+          // Remove Authorization header - not needed for session creation
         },
         body: JSON.stringify(requestBody),
       });
 
-      console.log('🎫 [LIVEKIT TOKEN] Response status:', response.status, response.statusText);
-      console.log('🎫 [LIVEKIT TOKEN] Response headers:', Object.fromEntries(response.headers.entries()));
+      console.log('🎫 [LIVEKIT TOKEN] Response status:', response.status);
 
       if (!response.ok) {
-        let errorText;
-        try {
-          errorText = await response.text();
-        } catch {
-          errorText = `HTTP ${response.status} ${response.statusText}`;
-        }
-        console.log('🎫 [LIVEKIT TOKEN] Error response body:', errorText);
-        throw new Error(`Failed to get LiveKit token: ${response.status} - ${errorText}`);
+        const errorText = await response.text();
+        console.log('🎫 [LIVEKIT TOKEN] Error response:', errorText);
+        throw new Error(`Failed to create session: ${response.status} - ${errorText}`);
       }
 
       const data = await response.json();
       console.log('🎫 [LIVEKIT TOKEN] Success response:', data);
       
+      // FIX: Map backend field names to frontend
       const tokenData: LiveKitToken = {
-        token: data.accessToken || data.token,
-        roomName: data.roomName || requestBody.roomName,
-        participantName: data.participantName || requestBody.participantName,
-        livekitUrl: data.livekitUrl, // <-- persist URL for LiveKitRoom
+        token: data.access_token,           // backend uses access_token
+        roomName: data.room_name,           // backend uses room_name
+        participantName: data.user_id,      // backend uses user_id
+        livekitUrl: data.livekit_url,       // backend uses livekit_url
       };
 
       console.log('🎫 [LIVEKIT TOKEN] Parsed token data:', {
@@ -91,13 +86,13 @@ export function useLiveKitToken() {
     } catch (err: any) {
       const errorMessage = err.message || 'Failed to generate LiveKit token';
       console.error('🎫 [LIVEKIT TOKEN ERROR]:', errorMessage);
-      console.error('🎫 [LIVEKIT TOKEN ERROR] Full error:', err);
       setError(errorMessage);
       return null;
     } finally {
       setIsLoading(false);
     }
   }, [accessToken, isAuthenticated]);
+
 
   const addMessage = useCallback((text: string, isUser: boolean, isVoice = false) => {
     const message: Message = {

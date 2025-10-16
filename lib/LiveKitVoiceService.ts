@@ -100,19 +100,20 @@ export class LiveKitVoiceService {
 
   private async generateToken(roomName: string, participantName: string) {
     try {
-      const url = `${APP_CONFIG.SERVICES.orchestrator}${APP_CONFIG.ENDPOINTS.LIVEKIT_TOKEN}`;
-      console.log('🎫 [LIVEKIT TOKEN] Requesting token from:', url);
+      // FIX: Use correct endpoint
+      const url = `${APP_CONFIG.SERVICES.orchestrator}/api/sessions/`;
+      console.log('🎫 [LIVEKIT TOKEN] Requesting session from:', url);
       
       const requestBody = {
-        roomName,
-        participantName,
+        user_id: participantName,
+        room_name: roomName,
       };
       
       const response = await fetch(url, {
         method: 'POST',
         headers: {
-          'Authorization': this.authToken ? `Bearer ${this.authToken}` : '',
           'Content-Type': 'application/json',
+          // Remove auth header - not needed
         },
         body: JSON.stringify(requestBody),
       });
@@ -124,11 +125,12 @@ export class LiveKitVoiceService {
       const data = await response.json();
       console.log('🎫 [LIVEKIT TOKEN] Success response:', data);
       
+      // FIX: Map backend field names
       return {
-        token: data.accessToken || data.token,
-        roomName: data.roomName || roomName,
-        participantName: data.participantName || participantName,
-        livekitUrl: data.livekitUrl,
+        token: data.access_token,          // backend uses access_token
+        roomName: data.room_name,          // backend uses room_name  
+        participantName: data.user_id,     // backend uses user_id
+        livekitUrl: data.livekit_url,      // backend uses livekit_url
       };
     } catch (error: any) {
       console.error('🎫 [LIVEKIT TOKEN ERROR]:', error.message);

@@ -15,7 +15,6 @@
     "@expo/vector-icons": "^14.0.4",
     "@livekit/react-native": "^2.9.3",
     "@livekit/react-native-webrtc": "^137.0.2",
-    "@config-plugins/react-native-webrtc": "^9.0.0",
     "livekit-client": "^2.15.10",
     "expo": "~52.0.17",
     "expo-av": "~15.0.2",

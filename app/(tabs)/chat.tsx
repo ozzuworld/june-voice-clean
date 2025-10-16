@@ -16,6 +16,17 @@ import { LiveKitRoom, useRoom, useParticipants, useTracks, Track } from '@liveki
 import { useAuth } from '@/hooks/useAuth';
 import { useLiveKitToken } from '@/hooks/useLiveKitToken';
 
+// sanity network fetch to verify network usable in this screen
+async function sanityFetch() {
+  try {
+    console.log('🐛 [TRACE] network sanity fetch start');
+    const res = await fetch('https://livekit.ozzu.world/');
+    console.log('🐛 [TRACE] network sanity fetch status:', res.status);
+  } catch (e) {
+    console.log('🚨 [ERROR] network sanity fetch failed:', (e as any)?.message || String(e));
+  }
+}
+
 interface Message {
   id: string;
   text: string;
@@ -48,14 +59,30 @@ function ForceConnectButton({ onPress }: { onPress: () => void }) {
 function DirectConnectTestButton({ serverUrl, token }: { serverUrl: string; token: string }) {
   const onPress = async () => {
     try {
-      console.log('🐛 [TRACE] direct connect test start');
-      const { Room } = await import('livekit-client');
+      console.log('🐛 [TRACE] direct connect: start');
+      const importStart = Date.now();
+      const mod = await import('livekit-client');
+      console.log('🐛 [TRACE] direct connect: livekit-client imported in', Date.now() - importStart, 'ms');
+      const { Room } = mod;
+      console.log('🐛 [TRACE] direct connect: Room class ready');
       const r = new Room();
-      await r.connect(serverUrl, token);
-      console.log('🟢 [SUCCESS] direct connect ok');
-      await r.disconnect();
+      console.log('🐛 [TRACE] direct connect: Room instance created');
+
+      const connectPromise = (async () => {
+        console.log('🐛 [TRACE] direct connect: calling r.connect');
+        await r.connect(serverUrl, token);
+        console.log('🟢 [SUCCESS] direct connect: r.connect resolved');
+        await r.disconnect();
+        console.log('🟢 [SUCCESS] direct connect: r.disconnect resolved');
+      })();
+
+      const timeoutPromise = new Promise((_, reject) =>
+        setTimeout(() => reject(new Error('connect timeout after 20s')), 20000)
+      );
+
+      await Promise.race([connectPromise, timeoutPromise]);
     } catch (e: any) {
-      console.log('🚨 [ERROR] direct connect failed:', e?.message || String(e));
+      console.log('🚨 [ERROR] direct connect:', e?.message || String(e), e?.stack ? ('\n' + e.stack) : '');
     }
   };
   return (
@@ -383,6 +410,7 @@ export default function ChatScreen() {
 
   useEffect(() => {
     console.log('🐛 [TRACE] ChatScreen mounted');
+    sanityFetch();
     return () => console.log('🐛 [TRACE] ChatScreen unmounted');
   }, []);
 
@@ -413,7 +441,6 @@ export default function ChatScreen() {
     console.log('🐛 [TRACE] tokenLoading:', tokenLoading, 'hasToken?', !!liveKitToken);
   }, [tokenLoading, liveKitToken]);
 
-  // generate token when authenticated
   useEffect(() => {
     if (isAuthenticated && !liveKitToken && !tokenLoading) {
       console.log('🎫 [DEBUG] Generating LiveKit token...');

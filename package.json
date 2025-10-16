@@ -1,7 +1,7 @@
 {
   "name": "june-voice-clean",
   "version": "1.0.0",
-  "main": "expo-router/entry",
+  "main": "index.js",
   "private": true,
   "scripts": {
     "start": "npx expo start",

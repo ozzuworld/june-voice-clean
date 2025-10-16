@@ -17,7 +17,7 @@ import {
   TrackReferenceOrPlaceholder,
   isTrackReference,
 } from '@livekit/react-native';
-import { Track } from 'livekit-client';
+import { Track, RoomState } from 'livekit-client';
 import { AudioControls } from './AudioControls';
 
 interface RoomViewProps {
@@ -27,63 +27,56 @@ interface RoomViewProps {
 export const RoomView: React.FC<RoomViewProps> = ({ onDisconnect }) => {
   const room = useRoom();
   const participants = useParticipants();
-  const tracks = useTracks([Track.Source.Microphone]);
+  // Use remote subscribed audio tracks only
+  const tracks = useTracks([Track.Source.Audio]);
+
+  // Only render after connected
+  if (room?.state !== RoomState.Connected) {
+    return (
+      <SafeAreaView style={styles.container}>
+        <View style={styles.header}>
+          <Text style={styles.title}>June Voice Assistant</Text>
+          <Text style={styles.roomInfo}>Connecting...</Text>
+        </View>
+      </SafeAreaView>
+    );
+  }
 
   const renderAudioTrack = ({ item }: { item: TrackReferenceOrPlaceholder }) => {
-    if (isTrackReference(item)) {
-      return (
-        <View style={styles.trackContainer}>
-          <Text style={styles.participantName}>
-            {item.participant.identity}
-          </Text>
-          <AudioTrack trackRef={item} />
-        </View>
-      );
-    } else {
-      // Placeholder for participants without audio
-      return (
-        <View style={styles.trackContainer}>
-          <Text style={styles.participantName}>
-            {item.participant.identity} (No Audio)
-          </Text>
-        </View>
-      );
-    }
+    // Only actual subscribed tracks are rendered
+    if (!isTrackReference(item)) return null;
+    const pub = item.publication;
+    if (!pub || !pub.subscribed) return null;
+    return (
+      <View style={styles.trackContainer}>
+        <Text style={styles.participantName}>{item.participant?.identity ?? 'Participant'}</Text>
+        <AudioTrack trackRef={item} />
+      </View>
+    );
   };
 
   return (
     <SafeAreaView style={styles.container}>
       <View style={styles.header}>
         <Text style={styles.title}>June Voice Assistant</Text>
-        <Text style={styles.roomInfo}>
-          Room: {room?.name || 'Unknown'}
-        </Text>
-        <Text style={styles.participantCount}>
-          {participants.length} participant{participants.length !== 1 ? 's' : ''}
-        </Text>
+        <Text style={styles.roomInfo}>Room: {room?.name || 'Unknown'}</Text>
+        <Text style={styles.participantCount}>{participants.length} participant{participants.length !== 1 ? 's' : ''}</Text>
       </View>
-
       <View style={styles.participantsContainer}>
         <Text style={styles.sectionTitle}>Participants</Text>
         <FlatList
           data={tracks}
-          keyExtractor={(item, index) => `${item.participant.identity}-${index}`}
+          keyExtractor={(item, index) => `${item.participant?.identity}-${index}`}
           renderItem={renderAudioTrack}
           showsVerticalScrollIndicator={false}
-          ListEmptyComponent={
-            <Text style={styles.emptyText}>No active participants</Text>
-          }
+          ListEmptyComponent={<Text style={styles.emptyText}>No active participants</Text>}
         />
       </View>
-
       <View style={styles.participantsList}>
         <Text style={styles.sectionTitle}>All Participants</Text>
         {participants.map((participant) => (
           <View key={participant.identity} style={styles.participantItem}>
-            <Text style={styles.participantText}>
-              {participant.identity}
-              {participant.isLocal && ' (You)'}
-            </Text>
+            <Text style={styles.participantText}>{participant.identity}{participant.isLocal && ' (You)'}</Text>
             <Text style={styles.participantStatus}>
               {participant.connectionQuality === 'excellent' ? '🟢' : 
                participant.connectionQuality === 'good' ? '🟡' : 
@@ -92,19 +85,13 @@ export const RoomView: React.FC<RoomViewProps> = ({ onDisconnect }) => {
           </View>
         ))}
       </View>
-
       {/* Audio Controls */}
       <AudioControls />
-
       <TouchableOpacity style={styles.disconnectButton} onPress={onDisconnect}>
         <Text style={styles.disconnectButtonText}>Disconnect</Text>
       </TouchableOpacity>
-
-      {/* Debug Info */}
       <View style={styles.debugInfo}>
-        <Text style={styles.debugText}>
-          Connection: {room?.engine?.connectionState || 'unknown'}
-        </Text>
+        <Text style={styles.debugText}>Connection: {room?.engine?.connectionState || 'unknown'}</Text>
       </View>
     </SafeAreaView>
   );

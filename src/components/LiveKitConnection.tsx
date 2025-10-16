@@ -39,8 +39,6 @@ export const LiveKitConnection: React.FC<LiveKitConnectionProps> = () => {
     };
 
     initAudio();
-
-    // Test backend connection
     testBackendConnection();
 
     return () => {
@@ -65,33 +63,23 @@ export const LiveKitConnection: React.FC<LiveKitConnectionProps> = () => {
     }
 
     setIsConnecting(true);
-    
     try {
-      // Option 1: Use the sessions endpoint (recommended)
       const sessionResponse = await backendApi.createSession(userId, roomName);
-      
       setToken(sessionResponse.access_token);
       setLivekitUrl(sessionResponse.livekit_url);
-      setIsConnected(true);
-      
+      // no immediate setIsConnected here, relies on onConnected of LiveKitRoom
       console.log('Session created:', {
         sessionId: sessionResponse.session_id,
         roomName: sessionResponse.room_name,
         livekitUrl: sessionResponse.livekit_url,
       });
-
-      // Alternative Option 2: Use direct token generation
-      // const tokenResponse = await backendApi.generateLiveKitToken(roomName, participantName);
-      // setToken(tokenResponse.token);
-      // setLivekitUrl(tokenResponse.livekitUrl);
-      // setIsConnected(true);
-      
     } catch (error) {
       console.error('Connection failed:', error);
       Alert.alert(
         'Connection Failed',
         `Failed to connect to room: ${error.message}`
       );
+      setIsConnected(false);
     } finally {
       setIsConnecting(false);
     }
@@ -111,20 +99,24 @@ export const LiveKitConnection: React.FC<LiveKitConnectionProps> = () => {
     }
   };
 
-  if (isConnected && token && livekitUrl) {
+  // Delay mount RoomView until LiveKitRoom fires onConnected
+  if (token && livekitUrl) {
     return (
       <LiveKitRoom
         serverUrl={livekitUrl}
         token={token}
         connect={true}
-        options={{
-          // Audio-only configuration for voice assistant
-          adaptiveStream: { pixelDensity: 'screen' },
-        }}
+        options={{ adaptiveStream: { pixelDensity: 'screen' } }}
         audio={true}
-        video={false} // Disable video for audio-only experience
+        video={false}
+        onConnected={() => setIsConnected(true)}
+        onDisconnected={() => setIsConnected(false)}
       >
-        <RoomView onDisconnect={disconnect} />
+        {isConnected ? <RoomView onDisconnect={disconnect} /> : (
+           <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: '#0B1426' }}>
+             <Text style={{ color: '#FFF', fontSize: 20 }}>Connecting to room…</Text>
+           </View>
+        )}
       </LiveKitRoom>
     );
   }
@@ -133,66 +125,36 @@ export const LiveKitConnection: React.FC<LiveKitConnectionProps> = () => {
     <View style={styles.container}>
       <Text style={styles.title}>June Voice Assistant</Text>
       <Text style={styles.subtitle}>LiveKit PoC</Text>
-      
-      {/* Backend Status Indicator */}
       <View style={styles.statusContainer}>
         <View style={[styles.statusDot, { backgroundColor: getBackendStatusColor() }]} />
         <Text style={styles.statusText}>
           Backend: {backendStatus === 'connected' ? 'Connected' : backendStatus === 'failed' ? 'Failed' : 'Checking...'}
         </Text>
       </View>
-
       <View style={styles.inputContainer}>
         <Text style={styles.label}>Room Name</Text>
-        <TextInput
-          style={styles.input}
-          value={roomName}
-          onChangeText={setRoomName}
-          placeholder="default-room"
-        />
+        <TextInput style={styles.input} value={roomName} onChangeText={setRoomName} placeholder="default-room" />
       </View>
-
       <View style={styles.inputContainer}>
         <Text style={styles.label}>User ID</Text>
-        <TextInput
-          style={styles.input}
-          value={userId}
-          onChangeText={setUserId}
-          placeholder="user123"
-        />
+        <TextInput style={styles.input} value={userId} onChangeText={setUserId} placeholder="user123" />
       </View>
-
       <View style={styles.inputContainer}>
         <Text style={styles.label}>Participant Name</Text>
-        <TextInput
-          style={styles.input}
-          value={participantName}
-          onChangeText={setParticipantName}
-          placeholder="Participant"
-        />
+        <TextInput style={styles.input} value={participantName} onChangeText={setParticipantName} placeholder="Participant" />
       </View>
-
-      <TouchableOpacity
-        style={[styles.button, isConnecting && styles.buttonDisabled]}
-        onPress={connectToRoom}
-        disabled={isConnecting || backendStatus === 'failed'}
-      >
+      <TouchableOpacity style={[styles.button, isConnecting && styles.buttonDisabled]} onPress={connectToRoom} disabled={isConnecting || backendStatus === 'failed'}>
         {isConnecting ? (
           <ActivityIndicator color="#FFFFFF" />
         ) : (
           <Text style={styles.buttonText}>Connect to Room</Text>
         )}
       </TouchableOpacity>
-
       {backendStatus === 'failed' && (
-        <TouchableOpacity
-          style={[styles.button, styles.retryButton]}
-          onPress={testBackendConnection}
-        >
+        <TouchableOpacity style={[styles.button, styles.retryButton]} onPress={testBackendConnection}>
           <Text style={styles.buttonText}>Retry Backend Connection</Text>
         </TouchableOpacity>
       )}
-
       <View style={styles.infoContainer}>
         <Text style={styles.infoTitle}>Backend Endpoints:</Text>
         <Text style={styles.infoText}>• /api/sessions/ - Create session</Text>

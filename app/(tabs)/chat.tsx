@@ -204,7 +204,7 @@ function VoiceChatUI() {
         console.log('📨 [DEBUG] Data received:', data);
         if (data.type === 'ai_response' && data.text) {
           addMessage(data.text, false);
-        } else if (data.type === 'stt_transcript' and data.text) {
+        } else if (data.type === 'stt_transcript' && data.text) {
           addMessage(data.text, true, true);
         }
       } catch (error) {
@@ -271,7 +271,7 @@ function VoiceChatUI() {
     <View style={[styles.messageContainer, item.isUser ? styles.userMessage : styles.aiMessage]}>
       <View style={[styles.messageBubble, { backgroundColor: item.isUser ? '#007AFF' : '#2C2C2E' }]}>
         <Text style={styles.messageText}>{item.text}</Text>
-        {item.isVoice and (
+        {item.isVoice && (
           <Ionicons name="mic" size={12} color="rgba(255,255,255,0.6)" style={styles.voiceIcon} />
         )}
       </View>
@@ -316,7 +316,7 @@ function VoiceChatUI() {
           <Text style={styles.debugText}>Subscribe: {debugInfo.canSubscribe ? '✅' : '❌'}</Text>
           <Text style={styles.debugText}>Participants: {debugInfo.participantCount}</Text>
           <Text style={styles.debugText}>Tracks: {debugInfo.tracksCount}</Text>
-          {debugInfo.lastError and (
+          {debugInfo.lastError && (
             <Text style={styles.debugError}>Error: {debugInfo.lastError}</Text>
           )}
         </View>
@@ -392,7 +392,7 @@ export default function ChatScreen() {
   useEffect(() => {}, [liveKitToken?.livekitUrl]);
 
   useEffect(() => {
-    if (isAuthenticated and !liveKitToken and !tokenLoading) {
+    if (isAuthenticated && !liveKitToken && !tokenLoading) {
       console.log('🎫 [DEBUG] Generating LiveKit token...');
       generateToken();
     }
@@ -412,9 +412,9 @@ export default function ChatScreen() {
         <View style={styles.authContainer}>
           <Text style={styles.authTitle}>June Voice AI</Text>
           <Text style={styles.authSubtitle}>Voice chat with AI using LiveKit</Text>
-          {authError and <Text style={styles.errorText}>{authError}</Text>}
+          {authError && <Text style={styles.errorText}>{authError}</Text>}
           <TouchableOpacity
-            style={[styles.signInButton, authLoading and styles.signInButtonDisabled]}
+            style={[styles.signInButton, authLoading && styles.signInButtonDisabled]}
             onPress={signIn}
             disabled={authLoading}
           >
@@ -429,13 +429,13 @@ export default function ChatScreen() {
     );
   }
 
-  if (tokenLoading or !liveKitToken) {
+  if (tokenLoading || !liveKitToken) {
     return (
       <SafeAreaView style={styles.container}>
         <View style={styles.loadingContainer}>
           <ActivityIndicator size="large" color="#007AFF" />
           <Text style={styles.loadingText}>Connecting to June AI...</Text>
-          {tokenError and (
+          {tokenError && (
             <View>
               <Text style={styles.errorText}>{tokenError}</Text>
               <TouchableOpacity style={styles.retryButton} onPress={generateToken}>
@@ -474,8 +474,8 @@ export default function ChatScreen() {
         setLkConnected(false);
       }}
       onError={(e: any) => {
-        const msg = e?.message or String(e);
-        const cause = (e?.cause and (e.cause.message or String(e.cause))) or null;
+        const msg = e?.message || String(e);
+        const cause = (e?.cause && (e.cause.message || String(e.cause))) || null;
         console.error('🔴 [DEBUG] LiveKitRoom onError event:', { 
           msg, 
           cause, 

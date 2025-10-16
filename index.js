@@ -6,6 +6,7 @@ import { Buffer } from 'buffer';
 import { registerGlobals } from '@livekit/react-native';
 import { registerRootComponent } from 'expo';
 import App from './App';
+import { setLogLevel, LogLevel } from 'livekit-client';
 
 // Polyfill TextEncoder/TextDecoder for Hermes
 if (typeof global.TextEncoder === 'undefined') {
@@ -32,6 +33,9 @@ if (typeof global.btoa === 'undefined') {
   // @ts-ignore
   global.btoa = (data) => Buffer.from(String(data), 'binary').toString('base64');
 }
+
+// Enable verbose LiveKit client logs for debugging
+setLogLevel(LogLevel.debug);
 
 // CRITICAL: Register LiveKit globals before anything else
 registerGlobals();

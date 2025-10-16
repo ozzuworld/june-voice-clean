@@ -25,7 +25,7 @@ interface Message {
 }
 
 async function fetchLiveKitToken(accessToken: string) {
-  const url = `${APP_CONFIG.SERVICES.orchestrator}${APP_CONFIG.ENDPOINTS.LIVEKIT_TOKEN}`;
+  const url = `${APP_CONFIG.SERVICES.orchestrator}${APP_CONFIG.ENDPOINTS.SESSIONS}`; // Use SESSIONS instead of LIVEKIT_TOKEN
   
   const response = await fetch(url, {
     method: 'POST',
@@ -34,8 +34,8 @@ async function fetchLiveKitToken(accessToken: string) {
       'Content-Type': 'application/json',
     },
     body: JSON.stringify({
-      roomName: `voice-${Date.now()}`,
-      participantName: `user-${Date.now()}`,
+      user_id: `user-${Date.now()}`, // Backend expects user_id, not participantName
+      room_name: `voice-${Date.now()}`, // Backend expects room_name, not roomName
     }),
   });
 
@@ -45,8 +45,8 @@ async function fetchLiveKitToken(accessToken: string) {
 
   const data = await response.json();
   return {
-    token: data.accessToken || data.token,
-    url: data.livekitUrl || APP_CONFIG.SERVICES.livekit,
+    token: data.access_token, // Backend returns access_token, not accessToken
+    url: data.livekit_url || APP_CONFIG.SERVICES.livekit, // Backend returns livekit_url
   };
 }
 

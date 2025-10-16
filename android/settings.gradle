@@ -21,7 +21,7 @@ extensions.configure(com.facebook.react.ReactSettingsExtension) { ex ->
   }
 }
 
-rootProject.name = 'june-voice-clean'
+rootProject.name = 'June Voice Minimal'
 
 dependencyResolutionManagement {
   versionCatalogs {

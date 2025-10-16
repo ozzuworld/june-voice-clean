@@ -6,7 +6,8 @@
   "scripts": {
     "start": "npx expo start",
     "android": "expo run:android",
-    "prebuild": "expo prebuild --clean"
+    "prebuild": "expo prebuild --clean",
+    "ios": "expo run:ios"
   },
   "dependencies": {
     "@livekit/react-native": "^2.9.3",

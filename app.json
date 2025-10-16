@@ -10,13 +10,20 @@
         "android.permission.RECORD_AUDIO",
         "android.permission.MODIFY_AUDIO_SETTINGS",
         "android.permission.INTERNET",
+        "android.permission.ACCESS_NETWORK_STATE",
+        "android.permission.RECORD_AUDIO",
+        "android.permission.MODIFY_AUDIO_SETTINGS",
+        "android.permission.INTERNET",
         "android.permission.ACCESS_NETWORK_STATE"
       ],
-      "adaptiveIcon": { "backgroundColor": "#0B1426" },
+      "adaptiveIcon": {
+        "backgroundColor": "#0B1426"
+      },
       "splash": {
         "backgroundColor": "#0B1426",
         "resizeMode": "contain"
-      }
+      },
+      "package": "com.kkazuma.junevoiceclean"
     },
     "splash": {
       "backgroundColor": "#0B1426",
@@ -25,7 +32,11 @@
     "plugins": [
       [
         "@livekit/react-native-expo-plugin",
-        { "android": { "audioType": "communication" } }
+        {
+          "android": {
+            "audioType": "communication"
+          }
+        }
       ]
     ]
   }
